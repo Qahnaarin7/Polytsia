@@ -1,5 +1,7 @@
 # Полиця
 
+**English.** Polytsia (shelf) is a portable launcher for game and app shortcuts on Windows 11 x64 (build 22621 or newer). Add .lnk, .url or .exe files, customize tiles with icons or cover images, pick one of 20 light and dark themes, and back up your whole library to a single .polytsia file. The interface is available in Ukrainian, English and Russian. Built with C++, Win32, Direct2D, DirectWrite, WIC and Windows SQLite; build it with build.ps1 (MSVC Build Tools, Windows SDK 10.0.22621+).
+
 Переносний лаунчер ігрових та інших ярликів для Windows 11 x64, збірка 22621 або новіша.
 
 [Завантажити останню версію](https://github.com/Qahnaarin7/Polytsia/releases/latest)
