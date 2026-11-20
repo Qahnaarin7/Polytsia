@@ -435,13 +435,7 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
     auto* image = Icon(entry);
     auto* art = TileCover(entry);
     const float amount = TileHover(entry);
-    if (effects) {
-        const float push = ControlAmount(pressMotion, id, pressed == id);
-        const float offset = -2.f * amount * (1.f - push) + push;
-        box.top += offset;
-        box.bottom += offset;
-        box = Inset(box, .8f * push);
-    }
+    const float push = ControlAmount(pressMotion, id, pressed == id);
     auto* displayed = art ? art : image;
     const auto highlight = displayed && displayed->pixels ? displayed->pixels->tint : theme.accent;
     const float mid = (box.left + box.right) / 2.f;
@@ -454,7 +448,7 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
     const float centerY = (box.top + box.bottom) / 2.f;
     auto revealLabel = [&] {
         if (reveal <= .01f) return;
-        const float bottom = box.bottom - 6.f + (effects ? 4.f * (1.f - reveal) : 0.f);
+        const float bottom = box.bottom - 6.f;
         const auto pill = D2D1::RectF(box.left + 6, bottom - 27, box.right - 6, bottom);
         canvas.Fill(pill, Opacity(theme.dialog, reveal * (contrast ? 1.f : .93f)), 6);
         canvas.Text(entry.name, Inset(pill, 3), Opacity(theme.text, reveal), canvas.semibold.Get(), true);
@@ -480,15 +474,9 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
                         theme.text, canvas.semibold.Get(), true);
         } else revealLabel();
     }
-    canvas.Stroke(Inset(box, .5f), theme.line, 11);
-    if (dragTarget == id || (keyboard && focused == id && dialog == Dialog::None)) {
-        canvas.Stroke(Inset(box, 1), theme.accent, 10, 2);
-    } else if (amount > .01f && !contrast) {
-        canvas.Stroke(Inset(box, 1), Opacity(highlight, amount * (dark ? .56f : .47f)), 10, 1.2f);
-    }
     if (compact) {
         const float half = 16.f * scale;
-        const float left = std::lerp(mid - half, box.left + 12.f, always ? 1.f : reveal);
+        const float left = labels == TileLabels::Hidden ? mid - half : box.left + 12.f;
         const float textLeft = left + 2.f * half + 9.f;
         DrawIcon(image, D2D1::RectF(left, centerY - half, left + 2.f * half, centerY + half));
         if (always || (reveal > .01f && textLeft < box.right - 10.f)) {
@@ -497,12 +485,22 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
         }
     } else if (style == TileStyle::Centered) {
         const float half = 24.f * scale;
-        const float iconTop = always ? box.top + 28.f * scale : centerY - half - 7.f * reveal;
+        const float iconTop = always ? box.top + 28.f * scale :
+            centerY - half - (labels == TileLabels::Hover ? 7.f : 0.f);
         DrawIcon(image, D2D1::RectF(mid - half, iconTop, mid + half, iconTop + 2.f * half));
         if (always) {
             canvas.Text(entry.name, D2D1::RectF(box.left + 9, box.top + 81.f * scale, box.right - 9, box.bottom - 12),
                         theme.text, canvas.body.Get(), true);
         } else revealLabel();
+    }
+    if (push > .01f && !contrast && !dragging) {
+        canvas.Fill(Inset(box, .5f), D2D1::ColorF(0, push * .16f), 10.5f);
+    }
+    canvas.Stroke(Inset(box, .5f), theme.line, 11);
+    if (dragTarget == id || (keyboard && focused == id && dialog == Dialog::None)) {
+        canvas.Stroke(Inset(box, 1), theme.accent, 10, 2);
+    } else if (amount > .01f && !contrast) {
+        canvas.Stroke(Inset(box, 1), Opacity(highlight, amount * (dark ? .56f : .47f)), 10, 1.2f);
     }
     if (dragging && id == pressed) {
         canvas.Fill(Inset(box, .5f), Opacity(theme.background, .53f), 11);
