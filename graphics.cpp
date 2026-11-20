@@ -492,7 +492,7 @@ ComPtr<ID2D1Bitmap> Canvas::Bitmap(const Pixels& pixels) {
 }
 
 bool Canvas::TileImage(ID2D1Bitmap* image, const Pixels& pixels, D2D1_RECT_F picture, D2D1_RECT_F tile,
-                       D2D1_COLOR_F background, ID2D1Bitmap* backdrop, std::optional<Crop> crop) {
+                       D2D1_COLOR_F background, ID2D1Bitmap* backdrop, std::optional<Crop> crop, float opacity) {
     const auto viewport = D2D1::SizeF(picture.right - picture.left, picture.bottom - picture.top);
     const auto source = crop ? CropFrame(pixels, viewport, *crop) : pixels.artwork;
     if (!image || source.left >= source.right || source.top >= source.bottom) return false;
@@ -517,7 +517,7 @@ bool Canvas::TileImage(ID2D1Bitmap* image, const Pixels& pixels, D2D1_RECT_F pic
                                  picture.right - insetX, picture.bottom - insetY);
     }
     target->PushLayer(D2D1::LayerParameters(tile, coverMask.Get(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                      D2D1::Matrix3x2F::Translation(tile.left, tile.top)), coverLayer.Get());
+                      D2D1::Matrix3x2F::Translation(tile.left, tile.top), opacity), coverLayer.Get());
     if (backdrop) target->DrawBitmap(backdrop, picture, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     else Fill(picture, background);
     target->DrawBitmap(image, destination, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source);

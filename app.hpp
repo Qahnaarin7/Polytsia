@@ -78,9 +78,10 @@ struct IconCache {
     ComPtr<ID2D1Bitmap> image;
     ULONGLONG lastUsed{};
     ComPtr<ID2D1Bitmap> backdrop;
+    ULONGLONG appeared{};
 };
 
-inline constexpr ULONGLONG ControlDuration = 145, TileHoverDuration = 260;
+inline constexpr ULONGLONG ControlDuration = 145, TileHoverDuration = 260, TileImageFadeDuration = 165;
 
 struct Tween {
     float from, to;
@@ -114,7 +115,7 @@ public:
     int titleHover = 0, titlePress = 0;
     int selected = -1;
     POINT down{}, pointer{};
-    ULONGLONG dialogSince = 0;
+    ULONGLONG dialogSince = 0, tileImageFadeUntil = 0;
     ULONGLONG ambientSince = 0, ambientElapsed = 0;
     std::wstring query, editing, notice, hotId;
     std::optional<ContextMenu> contextMenu;
@@ -166,14 +167,15 @@ public:
     void DrawCoverDialog(D2D1_RECT_F panel);
     void DrawTile(int id, D2D1_RECT_F rectangle);
     bool DrawTilePicture(const Shortcut& entry, IconCache* displayed, bool cover, D2D1_RECT_F picture,
-                         D2D1_RECT_F tile, const Palette& colors, bool darkTheme);
+                         D2D1_RECT_F tile, const Palette& colors, bool darkTheme, float opacity = 1.f);
     float TileHover(const Shortcut& entry) const;
     IconCache* TileCover(const Shortcut& entry);
     void DrawDragPreview();
     void DrawButton(int id, D2D1_RECT_F rectangle, const wchar_t* text, bool primary = false);
     void DrawPaletteButton(int id, D2D1_RECT_F rectangle, const ColorScheme& option, bool chosen);
     void DrawPaletteSwatch(D2D1_RECT_F rectangle, const ColorScheme& option);
-    void DrawIcon(IconCache* icon, D2D1_RECT_F rectangle);
+    void DrawIcon(IconCache* icon, D2D1_RECT_F rectangle, float opacity = 1.f);
+    float TileImageOpacity(const IconCache* icon) const;
     ID2D1Bitmap* IconBitmap(IconCache* icon);
     void Glyph(int kind, float x, float y, D2D1_COLOR_F color);
     void Place(HWND edit, D2D1_RECT_F rectangle);

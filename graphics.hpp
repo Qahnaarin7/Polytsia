@@ -64,5 +64,6 @@ struct Canvas {
     ComPtr<ID2D1Bitmap> Bitmap(const Pixels& pixels);
     ComPtr<ID2D1Bitmap> TileBackdrop(const Pixels& pixels);
     bool TileImage(ID2D1Bitmap* image, const Pixels& pixels, D2D1_RECT_F picture, D2D1_RECT_F tile,
-                   D2D1_COLOR_F background, ID2D1Bitmap* backdrop = nullptr, std::optional<Crop> crop = std::nullopt);
+                   D2D1_COLOR_F background, ID2D1Bitmap* backdrop = nullptr, std::optional<Crop> crop = std::nullopt,
+                   float opacity = 1.f);
 };

@@ -310,7 +310,7 @@ void App::DrawTileHalos(D2D1_RECT_F windowBounds) {
         if (shownBottom <= shownTop) continue;
         const float visibleHeight = shownBottom - shownTop;
         auto* image = TileCover(entry);
-        if (!image) image = Icon(entry);
+        if (!image || !image->pixels) image = Icon(entry);
         const auto color = image && image->pixels ? image->pixels->tint : theme.accent;
         const float spread = baseSpread * (.82f + .37f * pulse) * (.66f + .34f * amount);
         // Put the glow in the window background so title and search controls can be drawn over it.
@@ -382,7 +382,7 @@ ID2D1Bitmap* App::IconBitmap(IconCache* icon) {
     return icon->image.Get();
 }
 
-void App::DrawIcon(IconCache* icon, D2D1_RECT_F rectangle) {
+void App::DrawIcon(IconCache* icon, D2D1_RECT_F rectangle, float opacity) {
     if (auto* bitmap = IconBitmap(icon)) {
         const auto dimensions = bitmap->GetSize();
         const float scale = std::min((rectangle.right - rectangle.left) / dimensions.width,
@@ -390,7 +390,7 @@ void App::DrawIcon(IconCache* icon, D2D1_RECT_F rectangle) {
         const float cx = (rectangle.left + rectangle.right) / 2, cy = (rectangle.top + rectangle.bottom) / 2;
         const float rx = dimensions.width * scale / 2, ry = dimensions.height * scale / 2;
         canvas.target->DrawBitmap(bitmap, D2D1::RectF(cx - rx, cy - ry, cx + rx, cy + ry),
-                                  1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                                  opacity, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         return;
     }
     canvas.Fill(rectangle, contrast ? theme.field : D2D1::ColorF(scheme->tileTint, dark ? .72f : .80f), 10);
@@ -399,6 +399,12 @@ void App::DrawIcon(IconCache* icon, D2D1_RECT_F rectangle) {
     canvas.Line(x - 3, y + 4, x + 5, y - 4, theme.muted);
     canvas.Line(x + 1, y - 4, x + 5, y - 4, theme.muted);
     canvas.Line(x + 5, y - 4, x + 5, y, theme.muted);
+}
+
+float App::TileImageOpacity(const IconCache* icon) const {
+    if (!tileImageFadeUntil || !icon || !icon->appeared) return 1.f;
+    const float t = std::min(1.f, static_cast<float>(GetTickCount64() - icon->appeared) / TileImageFadeDuration);
+    return t * (2.f - t);
 }
 
 float App::TileHover(const Shortcut& entry) const {
@@ -410,12 +416,11 @@ float App::TileHover(const Shortcut& entry) const {
 
 IconCache* App::TileCover(const Shortcut& entry) {
     if (entry.cover.empty() || library.prefs.tileStyle != TileStyle::Cover) return nullptr;
-    auto* art = CachedIcon(CoverKey(entry));
-    return art && art->pixels ? art : nullptr;
+    return CachedIcon(CoverKey(entry));
 }
 
 bool App::DrawTilePicture(const Shortcut& entry, IconCache* displayed, bool cover, D2D1_RECT_F picture,
-                          D2D1_RECT_F tile, const Palette& colors, bool darkTheme) {
+                          D2D1_RECT_F tile, const Palette& colors, bool darkTheme, float opacity) {
     if (!displayed || !displayed->pixels) return false;
     auto background = contrast ? colors.background : colors.dialog;
     if (!contrast && !cover) {
@@ -427,13 +432,14 @@ bool App::DrawTilePicture(const Shortcut& entry, IconCache* displayed, bool cove
     }
     return canvas.TileImage(IconBitmap(displayed), *displayed->pixels, picture, tile, background,
                             !contrast && !cover ? displayed->backdrop.Get() : nullptr,
-                            cover ? std::optional{entry.crop} : std::nullopt);
+                            cover ? std::optional{entry.crop} : std::nullopt, opacity);
 }
 
 void App::DrawTile(int id, D2D1_RECT_F box) {
     const auto& entry = library.items[visible[id - Tile]];
     auto* image = Icon(entry);
-    auto* art = TileCover(entry);
+    auto* cover = TileCover(entry);
+    auto* art = cover && cover->pixels ? cover : nullptr;
     const float amount = TileHover(entry);
     const float push = ControlAmount(pressMotion, id, pressed == id);
     auto* displayed = art ? art : image;
@@ -463,10 +469,14 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
     } else canvas.Fill(box, dark && glass ? D2D1::ColorF(scheme->tileTint, .46f) : theme.tile, 11);
     if (style == TileStyle::Cover) {
         const auto picture = D2D1::RectF(box.left, box.top, box.right, box.bottom - (always ? TileCaptionHeight : 0.f));
-        const bool drawn = DrawTilePicture(entry, displayed, art != nullptr, picture, box, theme, dark);
-        if (!drawn) {
-            const float pictureCenterY = (picture.top + picture.bottom) / 2.f;
-            DrawIcon(nullptr, D2D1::RectF(mid - 24.f, pictureCenterY - 24.f, mid + 24.f, pictureCenterY + 24.f));
+        const bool pendingCover = !entry.cover.empty() && !cover;
+        if (!pendingCover && displayed) {
+            const bool drawn = DrawTilePicture(entry, displayed, art != nullptr, picture, box, theme, dark,
+                                               TileImageOpacity(displayed));
+            if (!drawn) {
+                const float pictureCenterY = (picture.top + picture.bottom) / 2.f;
+                DrawIcon(nullptr, D2D1::RectF(mid - 24.f, pictureCenterY - 24.f, mid + 24.f, pictureCenterY + 24.f));
+            }
         }
         if (always) {
             canvas.Line(box.left + 1.f, picture.bottom, box.right - 1.f, picture.bottom, theme.line, 1.f);
@@ -478,7 +488,9 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
         const float half = 16.f * scale;
         const float left = labels == TileLabels::Hidden ? mid - half : box.left + 12.f;
         const float textLeft = left + 2.f * half + 9.f;
-        DrawIcon(image, D2D1::RectF(left, centerY - half, left + 2.f * half, centerY + half));
+        if (image) {
+            DrawIcon(image, D2D1::RectF(left, centerY - half, left + 2.f * half, centerY + half), TileImageOpacity(image));
+        }
         if (always || (reveal > .01f && textLeft < box.right - 10.f)) {
             canvas.Text(entry.name, D2D1::RectF(textLeft, box.top, box.right - 10, box.bottom),
                         Opacity(theme.text, always ? 1.f : reveal));
@@ -487,7 +499,9 @@ void App::DrawTile(int id, D2D1_RECT_F box) {
         const float half = 24.f * scale;
         const float iconTop = always ? box.top + 28.f * scale :
             centerY - half - (labels == TileLabels::Hover ? 7.f : 0.f);
-        DrawIcon(image, D2D1::RectF(mid - half, iconTop, mid + half, iconTop + 2.f * half));
+        if (image) {
+            DrawIcon(image, D2D1::RectF(mid - half, iconTop, mid + half, iconTop + 2.f * half), TileImageOpacity(image));
+        }
         if (always) {
             canvas.Text(entry.name, D2D1::RectF(box.left + 9, box.top + 81.f * scale, box.right - 9, box.bottom - 12),
                         theme.text, canvas.body.Get(), true);
@@ -594,6 +608,7 @@ void App::DrawThemePreview(D2D1_RECT_F panel) {
         canvas.Fill(box, contrast ? sample.field : D2D1::ColorF(colors.tileTint, browseDark ? .83f : .69f), 10);
         auto* image = Icon(entry);
         auto* cover = TileCover(entry);
+        if (cover && !cover->pixels) cover = nullptr;
         const auto picture = D2D1::RectF(left, top, box.right, box.bottom - (coverStyle ? caption : 0.f));
         const bool drawn = coverStyle &&
             DrawTilePicture(entry, cover ? cover : image, cover != nullptr, picture, box, sample, browseDark);

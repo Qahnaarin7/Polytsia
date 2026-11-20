@@ -4,8 +4,8 @@
 1 24 "app.manifest"
 
 1 VERSIONINFO
- FILEVERSION 1,2,12,0
- PRODUCTVERSION 1,2,12,0
+ FILEVERSION 1,2,13,0
+ PRODUCTVERSION 1,2,13,0
  FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
  FILEOS VOS__WINDOWS32
  FILETYPE VFT_APP
@@ -15,9 +15,9 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "FileDescription", "Polytsia Shortcut Launcher\0"
-            VALUE "FileVersion", "1.2.12.0\0"
+            VALUE "FileVersion", "1.2.13.0\0"
             VALUE "ProductName", "Polytsia\0"
-            VALUE "ProductVersion", "1.2.12.0\0"
+            VALUE "ProductVersion", "1.2.13.0\0"
         END
     END
     BLOCK "VarFileInfo"

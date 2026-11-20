@@ -216,6 +216,7 @@ void App::UpdateMotion() {
         hoverMotion.clear();
         pressMotion.clear();
         dialogSince = 0;
+        tileImageFadeUntil = 0;
         if (contextMenu) contextMenu->opened = 0;
         if (moveEdit) Layout();
     }
@@ -404,7 +405,15 @@ void App::RequestTileAssets(const Shortcut& entry) {
 void App::StoreIcon(IconResult result) {
     constexpr size_t CacheLimit = 24 * 1024 * 1024;
     const size_t bytes = result.pixels ? result.pixels->bytes.size() : 0;
-    if (!icons.emplace(std::move(result.key), IconCache{std::move(result.pixels), {}, GetTickCount64()}).second) return;
+    const auto now = GetTickCount64();
+    const bool fade = bytes != 0 && effects && activeWindow && !minimized &&
+        page == Page::Library && IsWindowVisible(window);
+    if (!icons.emplace(std::move(result.key), IconCache{std::move(result.pixels), {}, now, {},
+                                                       fade ? now : 0}).second) return;
+    if (fade) {
+        if (!tileImageFadeUntil) SetTimer(window, AnimationTimer, 16, nullptr);
+        tileImageFadeUntil = now + TileImageFadeDuration;
+    }
     iconBytes += bytes;
     while (iconBytes > CacheLimit) {
         const auto oldest = std::min_element(icons.begin(), icons.end(), [](const auto& first, const auto& second) {
@@ -557,11 +566,12 @@ void App::MotionTick() {
     std::erase_if(pressMotion, finished);
     if (contextMenu && contextMenu->opened && now - contextMenu->opened >= MenuDuration) contextMenu->opened = 0;
     if (dialogSince && now - dialogSince >= 160) dialogSince = 0;
+    if (now >= tileImageFadeUntil) tileImageFadeUntil = 0;
     if (moveEdit) {
         const auto panel = Popup();
         Place(nameEdit, D2D1::RectF(panel.left + 26, panel.top + 83, panel.right - 26, panel.top + 119));
     }
-    if (transitions.empty() && hoverMotion.empty() && pressMotion.empty() && !dialogSince &&
+    if (transitions.empty() && hoverMotion.empty() && pressMotion.empty() && !dialogSince && !tileImageFadeUntil &&
         (!contextMenu || !contextMenu->opened)) KillTimer(window, AnimationTimer);
     Invalidate();
 }
@@ -1281,6 +1291,9 @@ void App::Suspend(bool suspended) {
     hoverMotion.clear();
     pressMotion.clear();
     dialogSince = 0;
+    tileImageFadeUntil = 0;
+    hover = 0;
+    hotId.clear();
 }
 
 bool App::SendToTray() {
@@ -1424,6 +1437,7 @@ LRESULT App::Handle(UINT message, WPARAM w, LPARAM l) {
     case WM_ACTIVATE:
         activeWindow = LOWORD(w) != WA_INACTIVE;
         if (!activeWindow) {
+            tileImageFadeUntil = 0;
             CloseMenu();
             ChangeTitleHover(0);
             ChangeTitlePress(0);
