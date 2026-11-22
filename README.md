@@ -1,6 +1,6 @@
 # Polytsia
 
-Polytsia ("shelf") is a portable launcher for game and app shortcuts on Windows 11 x64, build 22621 or later. Customize tiles with icons or covers, choose from 20 light and dark palettes, and back up your library to a single file.
+Polytsia ("shelf") is a portable launcher for game and app shortcuts on Windows 11 x64, build 22621 or later. Customize tiles with icons or covers, choose from 30 light and dark palettes, and back up your library to a single file.
 
 [Download the latest release](https://github.com/Qahnaarin7/Polytsia/releases/latest)
 
@@ -19,9 +19,9 @@ Polytsia uses the Windows display language at startup. The interface is availabl
 
 ### Themes
 
-There are ten light and ten dark palettes. **Match Windows** applies the corresponding palette when Windows switches between light and dark mode. Hover over a palette or use **Tab** to focus it and preview it on your first three tiles. Click the palette or press **Enter** to save your choice.
+There are fifteen light and fifteen dark palettes. **Match Windows** applies the corresponding palette when Windows switches between light and dark mode. Hover over a palette or use **Tab** to focus it and preview it on your first three tiles. Click the palette or press **Enter** to save your choice.
 
-**Ambient brightness** controls the background lighting and colored tile glow from 0% to 150%. Desktop Acrylic is available on Windows 11 24H2 and later when transparency effects are enabled.
+**Ambient brightness** controls the background lighting and colored tile glow from 0% to 150%. **Ambient effect** picks how the background light moves: **Drift**, **Aurora** (ribbons across the top), **Pulse** (two corner lights breathing in turn), **Follow cursor**, or **Still** (no animation). Desktop Acrylic is available on Windows 11 24H2 and later when transparency effects are enabled.
 
 ### Tiles
 

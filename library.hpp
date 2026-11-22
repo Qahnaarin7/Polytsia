@@ -32,7 +32,9 @@ enum class TileStyle { Centered, Cover, Compact };
 enum class TileLabels { Always, Hover, Hidden };
 enum class TileSize { Small, Medium, Large };
 enum class TileSpacing { Tight, Normal, Wide };
-inline constexpr int PaletteCount = 10;
+enum class AmbientStyle { Drift, Aurora, Pulse, Cursor, Still };
+inline constexpr int AmbientStyleCount = 5;
+inline constexpr int PaletteCount = 15;
 inline constexpr int AmbientMax = 150;
 inline constexpr float CropZoomMax = 3.f;
 
@@ -46,6 +48,7 @@ struct Preferences {
     int darkPalette = 0;
     TileStyle tileStyle = TileStyle::Centered;
     int ambient = 100;
+    AmbientStyle ambientStyle = AmbientStyle::Drift;
     TileLabels labels = TileLabels::Always;
     TileSize tileSize = TileSize::Medium;
     TileSpacing tileSpacing = TileSpacing::Normal;
@@ -60,7 +63,7 @@ struct WindowSize {
     bool operator==(const WindowSize&) const = default;
 };
 
-inline constexpr int SchemaVersion = 2;
+inline constexpr int SchemaVersion = 3;
 enum class OpenResult { Ok, Failed, NewerVersion };
 
 class Library {

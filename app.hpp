@@ -35,12 +35,14 @@ enum Control {
     LaunchMenu = 70, AdminMenu, LocationMenu, EditMenu, ReplaceMenu, EarlierMenu, LaterMenu, DeleteMenuItem,
     SearchMenu, AddMenu, SortMenu, SettingsMenu,
     CaptionMinimize = 85, CaptionMaximize, CaptionClose,
-    FirstLightPalette = 90,
+    FirstAmbientStyle = 90,
+    FirstLightPalette = 100,
     FirstDarkPalette = FirstLightPalette + PaletteCount,
     Tile = FirstDarkPalette + PaletteCount
 };
 static_assert(OpenDataControl < FirstBehaviorOption);
 static_assert(SettingsMenu < CaptionMinimize);
+static_assert(FirstAmbientStyle + AmbientStyleCount <= FirstLightPalette);
 enum class Dialog { None, Edit, Cover, Error, Missing, Remove, Restore, Info };
 
 struct ContextMenu {
@@ -137,6 +139,7 @@ public:
     CoverChange coverWork;
     IconCache cropPreview;
     int ambientPreview = -1;
+    D2D1_POINT_2F ambientFocus{-1.f, -1.f};
     std::vector<size_t> visible;
     std::vector<Hit> hits;
     std::map<std::wstring, IconCache> icons;
@@ -160,6 +163,7 @@ public:
     void Invalidate();
     void Paint();
     void DrawRoot();
+    void DrawAmbient(D2D1_RECT_F full);
     void DrawTitle();
     void DrawBrandMark(float left, float top, float size, D2D1_COLOR_F color);
     D2D1_RECT_F TitleButton(int id) const;
@@ -213,6 +217,7 @@ public:
     float SettingsClipTop() const;
     float SettingsBottom() const;
     float AmbientPosition() const;
+    float EffectPosition() const;
     float SettingsPosition(float y) const;
     void SwitchSettings(SettingsSection section);
     void BrowsePalettes(bool darkPalette);

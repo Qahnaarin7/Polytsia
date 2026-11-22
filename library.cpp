@@ -83,6 +83,8 @@ OpenResult PrepareSchema(sqlite3* db) {
         // 1 -> 2: launch counters and the global hotkey option.
         "ALTER TABLE shortcuts ADD COLUMN launches INTEGER NOT NULL DEFAULT 0;"
         "ALTER TABLE interface_options ADD COLUMN global_hotkey INTEGER NOT NULL DEFAULT 0;",
+        // 2 -> 3: ambient effect style.
+        "ALTER TABLE visual_effects ADD COLUMN style INTEGER NOT NULL DEFAULT 0;",
     };
     for (int step = version; step < SchemaVersion; ++step) {
         const std::string sql = std::string("BEGIN;") + Migrations[step] +
@@ -101,7 +103,7 @@ bool WritePreferences(sqlite3* db, const Preferences& preferences) {
         "INSERT OR REPLACE INTO preferences(singleton,theme,close_after,motion,after_launch,on_minimize,on_close)"
         " VALUES(1,?,?,?,?,?,?)");
     const auto appearance = Query(db, "INSERT OR REPLACE INTO appearance VALUES(1,?,?,?)");
-    const auto effects = Query(db, "INSERT OR REPLACE INTO visual_effects VALUES(1,?)");
+    const auto effects = Query(db, "INSERT OR REPLACE INTO visual_effects(singleton,ambient,style) VALUES(1,?,?)");
     const auto labels = Query(db, "INSERT OR REPLACE INTO tile_labels VALUES(1,?)");
     const auto interfaceOptions = Query(db, "INSERT OR REPLACE INTO interface_options"
         "(singleton,tile_size,tile_spacing,tile_halo,pause_on_battery,global_hotkey) VALUES(1,?,?,?,?,?)");
@@ -118,6 +120,7 @@ bool WritePreferences(sqlite3* db, const Preferences& preferences) {
         sqlite3_bind_int(appearance.get(), 3, static_cast<int>(preferences.tileStyle)) == SQLITE_OK &&
         sqlite3_step(appearance.get()) == SQLITE_DONE &&
         sqlite3_bind_int(effects.get(), 1, preferences.ambient) == SQLITE_OK &&
+        sqlite3_bind_int(effects.get(), 2, static_cast<int>(preferences.ambientStyle)) == SQLITE_OK &&
         sqlite3_step(effects.get()) == SQLITE_DONE &&
         sqlite3_bind_int(labels.get(), 1, static_cast<int>(preferences.labels)) == SQLITE_OK &&
         sqlite3_step(labels.get()) == SQLITE_DONE &&
@@ -267,7 +270,7 @@ bool Library::Read() {
                                   "FROM shortcuts LEFT JOIN shortcut_covers ON shortcuts.id=shortcut_covers.id ORDER BY position");
     const auto settings = Query(db_, "SELECT theme,motion,after_launch,on_minimize,on_close FROM preferences WHERE singleton=1");
     const auto appearance = Query(db_, "SELECT light_palette,dark_palette,tile_style FROM appearance WHERE singleton=1");
-    const auto effects = Query(db_, "SELECT ambient FROM visual_effects WHERE singleton=1");
+    const auto effects = Query(db_, "SELECT ambient,style FROM visual_effects WHERE singleton=1");
     const auto labels = Query(db_, "SELECT mode FROM tile_labels WHERE singleton=1");
     const auto placement = Query(db_, "SELECT width,height,maximized FROM window_state WHERE singleton=1");
     if (!rows || !settings || !appearance || !effects || !labels || !placement) return false;
@@ -303,7 +306,10 @@ bool Library::Read() {
     }
     if (result != SQLITE_ROW && result != SQLITE_DONE) return false;
     result = sqlite3_step(effects.get());
-    if (result == SQLITE_ROW) prefs.ambient = std::clamp(sqlite3_column_int(effects.get(), 0), 0, AmbientMax);
+    if (result == SQLITE_ROW) {
+        prefs.ambient = std::clamp(sqlite3_column_int(effects.get(), 0), 0, AmbientMax);
+        prefs.ambientStyle = static_cast<AmbientStyle>(std::clamp(sqlite3_column_int(effects.get(), 1), 0, AmbientStyleCount - 1));
+    }
     if (result != SQLITE_ROW && result != SQLITE_DONE) return false;
     result = sqlite3_step(labels.get());
     if (result == SQLITE_ROW) prefs.labels = static_cast<TileLabels>(std::clamp(sqlite3_column_int(labels.get(), 0), 0, 2));

@@ -109,25 +109,72 @@ void App::Paint() {
     EndPaint(window, &paint);
 }
 
+void App::DrawAmbient(D2D1_RECT_F full) {
+    const float brightness = AmbientValue() / 100.f;
+    const auto [nearLight, farLight] = AmbientLights(*scheme, brightness, dark);
+    const float h = full.bottom;
+    const auto glow = [&](float x, float y, float rx, float ry, D2D1_COLOR_F color) {
+        canvas.Glow(D2D1::Point2F(width * x, h * y), width * rx, h * ry, color, full, true);
+    };
+    // With animations off the effects freeze at a pleasant frame instead of disappearing.
+    const auto style = library.prefs.ambientStyle;
+    const auto phaseOf = [&](ULONGLONG period) {
+        return style == AmbientStyle::Still ? 0.f : static_cast<float>(AmbientTime() % period) * (FullTurn / period);
+    };
+    switch (style) {
+    case AmbientStyle::Aurora: {
+        // Wide, flat ribbons of light drifting across the top of the window.
+        const float phase = phaseOf(14000);
+        for (int band = 0; band < 3; ++band) {
+            const float offset = band * 2.1f;
+            const float x = .2f + band * .3f + .08f * std::sin(phase + offset);
+            const float y = .16f + .07f * band + .06f * std::sin(phase * 2.f + offset);
+            glow(x, y, .52f + .08f * std::cos(phase + offset), .34f, band % 2 ? farLight : nearLight);
+        }
+        glow(.5f, .95f, .8f, .38f, Opacity(farLight, farLight.a * .55f));
+        break;
+    }
+    case AmbientStyle::Pulse: {
+        // Two lights in opposite corners that slowly breathe in turn.
+        const float phase = phaseOf(5200);
+        const float a = .5f + .5f * std::sin(phase), b = .5f + .5f * std::sin(phase + FullTurn / 2.f);
+        glow(.16f, .18f, .5f + .16f * a, .6f + .16f * a, nearLight);
+        glow(.86f, .84f, .48f + .16f * b, .58f + .16f * b, farLight);
+        break;
+    }
+    case AmbientStyle::Cursor: {
+        // The near light eases toward the mouse pointer; the far light drifts opposite to it.
+        const D2D1_POINT_2F target = activeWindow && pointer.x > 0 && pointer.y > 0
+            ? D2D1::Point2F(std::clamp(ToDip(pointer.x) / std::max(1.f, width), 0.f, 1.f),
+                            std::clamp(ToDip(pointer.y) / std::max(1.f, h), 0.f, 1.f))
+            : D2D1::Point2F(.35f, .3f);
+        if (ambientFocus.x < 0.f) ambientFocus = target;
+        const float ease = effects ? .14f : 1.f;
+        ambientFocus.x += (target.x - ambientFocus.x) * ease;
+        ambientFocus.y += (target.y - ambientFocus.y) * ease;
+        glow(ambientFocus.x, ambientFocus.y, .5f, .6f, nearLight);
+        glow(1.f - ambientFocus.x * .6f, 1.f - ambientFocus.y * .6f, .62f, .7f, farLight);
+        break;
+    }
+    case AmbientStyle::Drift:
+    case AmbientStyle::Still:
+    default: {
+        const float phase = phaseOf(8200);
+        const float sweep = std::cos(phase);
+        glow(.31f + .24f * std::sin(phase), .23f + .20f * std::sin(phase - .57f), .69f + .06f * sweep, .78f, nearLight);
+        glow(.74f - .21f * std::sin(phase + .35f), .72f + .22f * std::cos(phase + .35f), .64f - .06f * sweep, .72f, farLight);
+        break;
+    }
+    }
+}
+
 void App::DrawRoot() {
     hits.clear();
     const auto full = D2D1::RectF(0, 0, width, height + TitleHeight);
     canvas.target->Clear(Opacity(theme.background, glass ? (dark ? .23f : .24f) : 1.f));
     if (!contrast && AmbientValue() > 0) {
-        const float brightness = AmbientValue() / 100.f;
-        constexpr ULONGLONG period = 8200;
-        const float phase = static_cast<float>(AmbientTime() % period) * (FullTurn / period);
-        const float nearX = .31f + .24f * std::sin(phase);
-        const float nearY = .23f + .20f * std::sin(phase - .57f);
-        const float farX = .74f - .21f * std::sin(phase + .35f);
-        const float farY = .72f + .22f * std::cos(phase + .35f);
-        const float sweep = std::cos(phase);
-        const auto [nearLight, farLight] = AmbientLights(*scheme, brightness, dark);
-        canvas.Glow(D2D1::Point2F(width * nearX, full.bottom * nearY), width * (.69f + .06f * sweep), full.bottom * .78f,
-                    nearLight, full, true);
-        canvas.Glow(D2D1::Point2F(width * farX, full.bottom * farY), width * (.64f - .06f * sweep), full.bottom * .72f,
-                    farLight, full, true);
-        canvas.AmbientGrain(full, dpi, std::min(1.f, brightness * 2.f));
+        DrawAmbient(full);
+        canvas.AmbientGrain(full, dpi, std::min(1.f, AmbientValue() / 50.f));
     }
     if (page != Page::Settings) DrawTileHalos(full);
     DrawTitle();
@@ -751,6 +798,17 @@ void App::DrawSettings() {
         canvas.Stroke(dot, theme.accent, 6, 1.6f);
         canvas.Text(std::to_wstring(amount) + L"%", D2D1::RectF(right - 58, y, right - 8, y + SettingsLayout::RowHeight),
                     theme.text, canvas.body.Get(), true);
+        section(EffectPosition(), Texts::AmbientEffect.Get());
+        static constexpr UiText EffectNames[AmbientStyleCount] = {
+            Texts::EffectDrift, Texts::EffectAurora, Texts::EffectPulse, Texts::EffectCursor, Texts::EffectStill};
+        const int effectColumns = PaletteColumns();
+        const float effectWidth = (span - (effectColumns - 1) * SettingsLayout::Gap) / effectColumns;
+        for (int i = 0; i < AmbientStyleCount; ++i) {
+            const float left = x + i % effectColumns * (effectWidth + SettingsLayout::Gap);
+            const float top = row(EffectPosition() + 26.f) + i / effectColumns * SettingsLayout::Pitch;
+            DrawButton(FirstAmbientStyle + i, D2D1::RectF(left, top, left + effectWidth, top + ChipHeight),
+                       EffectNames[i].Get(), static_cast<int>(library.prefs.ambientStyle) == i);
+        }
     } else if (settingsSection == SettingsSection::Tiles) {
         const wchar_t* tileStyles[] = {Texts::Centered.Get(), Texts::FullTile.Get(), Texts::Compact.Get()};
         const wchar_t* labelStyles[] = {Texts::Always.Get(), Texts::OnHover.Get(), Texts::Hidden.Get()};
