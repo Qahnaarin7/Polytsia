@@ -3,10 +3,9 @@
 ## 1.3.0
 
 ### Added
-- **Import games** in the background menu finds installed Steam, Epic Games, and GOG games and adds them as tiles. Steam games get their library artwork as covers.
 - **Run as administrator** and **Open file location** in the tile menu.
-- **Sort by most used** in the background menu. Polytsia now counts launches for each tile.
-- Optional global hotkey **Ctrl+Alt+Space** (Settings → Behavior → Startup) to show or hide the window.
+- **Sort by most used** in the background menu. Polytsia now counts launches for each tile and says so when there is nothing to sort yet.
+- Optional global shortcut to show or hide the window: Ctrl+Alt+P, Ctrl+Alt+G, or Ctrl+Alt+F12 (Settings → Behavior → Startup).
 - **Open data folder** on the Backup tab.
 - Error log at `%LOCALAPPDATA%\Polytsia\log.txt`.
 

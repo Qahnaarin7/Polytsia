@@ -67,11 +67,10 @@ try {
     $arguments = @(
         '/nologo', '/std:c++20', '/EHsc', '/utf-8', '/O2', '/MT', '/W4', '/GS', '/Gy',
         '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_WIN32_WINNT=0x0A00', "/Fo$output\\",
-        'app.cpp', 'view.cpp', 'graphics.cpp', 'library.cpp', 'cover_editor.cpp', 'games.cpp', 'log.cpp', 'actions.cpp', 'window.cpp', $resource,
+        'app.cpp', 'view.cpp', 'graphics.cpp', 'library.cpp', 'cover_editor.cpp', 'log.cpp', 'actions.cpp', 'window.cpp', $resource,
         '/link', '/MANIFEST:NO', '/SUBSYSTEM:WINDOWS', '/OPT:REF', '/OPT:ICF', "/OUT:$output\Polytsia.exe",
         'user32.lib', 'gdi32.lib', 'dwmapi.lib', 'd2d1.lib', 'dwrite.lib', 'winsqlite3.lib', 'shell32.lib', 'ole32.lib',
-        'uuid.lib', 'comctl32.lib', 'advapi32.lib', 'windowscodecs.lib', 'uxtheme.lib', 'powrprof.lib',
-        'propsys.lib', 'shlwapi.lib'
+        'uuid.lib', 'comctl32.lib', 'advapi32.lib', 'windowscodecs.lib', 'uxtheme.lib', 'powrprof.lib'
     )
     & (Join-Path $vcBin 'cl.exe') @arguments
     if ($LASTEXITCODE) { throw "MSVC exited with code $LASTEXITCODE." }

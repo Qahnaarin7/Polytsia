@@ -239,14 +239,6 @@ void App::Glyph(int kind, float x, float y, D2D1_COLOR_F color) {
         canvas.Line(x - 7, y - 5, x - 2, y - 5, color, 1.3f);
         canvas.Line(x - 2, y - 5, x, y - 3, color, 1.3f);
         canvas.Stroke(D2D1::RectF(x - 7, y - 3, x + 7, y + 6), color, 1.5f, 1.3f);
-    } else if (kind == ImportMenu) {
-        // Arrow into a tray.
-        canvas.Line(x, y - 7, x, y + 2, color);
-        canvas.Line(x - 4, y - 2, x, y + 2, color);
-        canvas.Line(x + 4, y - 2, x, y + 2, color);
-        canvas.Line(x - 7, y + 2, x - 7, y + 6, color);
-        canvas.Line(x - 7, y + 6, x + 7, y + 6, color);
-        canvas.Line(x + 7, y + 6, x + 7, y + 2, color);
     } else if (kind == SortMenu) {
         // Bars of decreasing length.
         canvas.Line(x - 7, y - 5, x + 7, y - 5, color);
@@ -804,7 +796,6 @@ void App::DrawSettings() {
         }
         section(SettingsLayout::StartupSection, Texts::Startup.Get());
         toggle(AutoStartControl, AutoStart, Texts::StartInTray.Get(), autoStart);
-        toggle(HotkeyControl, SettingsLayout::Hotkey, Texts::GlobalHotkey.Get(), library.prefs.globalHotkey);
         section(SettingsLayout::MotionSection, Texts::MotionAndPower.Get());
         toggle(Control::Motion, SettingsLayout::Motion, Texts::Animations.Get(), library.prefs.motion);
         const auto hint = !portableBattery ? Texts::BatteryHint.Get()

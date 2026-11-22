@@ -26,28 +26,13 @@ void App::RevealTarget(const std::wstring& id) {
     if (!RevealInExplorer(ShortcutTarget(library.File(library.items[index].file)))) Error(Texts::TargetNotFound.Get());
 }
 
-void App::ImportGames() {
-    SetCursor(LoadCursorW(nullptr, IDC_WAIT));
-    const auto games = FindInstalledGames();
-    size_t duplicates = 0, failures = 0;
-    const size_t added = games.empty() ? 0 : library.Import(games, duplicates, failures);
-    SetCursor(LoadCursorW(nullptr, IDC_ARROW));
-    Log(L"Game import: found %zu, added %zu, duplicates %zu, failed %zu", games.size(), added, duplicates, failures);
-    if (games.empty()) { OpenDialog(Dialog::Info, Texts::NoGamesFound.Get()); return; }
-    if (added) Filter();
-    std::wstring report;
-    if (added || failures) {
-        report = Texts::ImportedGames.Get() + std::to_wstring(added) + L".";
-        if (failures) report += Texts::ImportFailed.Get() + std::to_wstring(failures) + L".";
-        if (duplicates) report += Texts::DuplicateCount.Get() + std::to_wstring(duplicates) + L".";
-    } else report = Texts::AllGamesAdded.Get();
-    if (failures && !added) Error(report);
-    else OpenDialog(Dialog::Info, report);
-}
-
 void App::SortByUse() {
-    if (library.SortByLaunches()) Filter();
-    else Error(Texts::SaveOrderError.Get());
+    switch (library.SortByLaunches()) {
+    case Library::SortResult::Sorted: Filter(); break;
+    case Library::SortResult::Unchanged: OpenDialog(Dialog::Info, Texts::SortUnchanged.Get()); break;
+    case Library::SortResult::NoLaunches: OpenDialog(Dialog::Info, Texts::SortNoLaunches.Get()); break;
+    case Library::SortResult::Failed: Error(Texts::SaveOrderError.Get()); break;
+    }
 }
 
 void App::Context(int id, POINT position) {
@@ -128,7 +113,6 @@ void App::RunMenu(int command) {
     if (command == SearchMenu) { ShowSearch(true); return; }
     if (command == AddMenu) { Command(Add); return; }
     if (command == SettingsMenu) { View(Page::Settings); return; }
-    if (command == ImportMenu) { ImportGames(); return; }
     if (command == SortMenu) { SortByUse(); return; }
     const auto originalIndex = library.Find(id);
     if (originalIndex >= library.items.size()) return;

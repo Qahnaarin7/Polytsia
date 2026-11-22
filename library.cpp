@@ -1,8 +1,6 @@
 #include "graphics.hpp"
 #include "localization.hpp"
 #include "log.hpp"
-#include <intshcut.h>
-#include <propvarutil.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <shellapi.h>
@@ -319,7 +317,7 @@ bool Library::Read() {
             prefs.tileSpacing = static_cast<TileSpacing>(std::clamp(sqlite3_column_int(options.get(), 1), 0, 2));
             prefs.tileHalo = sqlite3_column_int(options.get(), 2) != 0;
             prefs.pauseMotionOnBattery = sqlite3_column_int(options.get(), 3) != 0;
-            prefs.globalHotkey = sqlite3_column_int(options.get(), 4) != 0;
+            prefs.globalHotkey = std::clamp(sqlite3_column_int(options.get(), 4), 0, HotkeyOptionCount - 1);
         }
         if (result != SQLITE_ROW && result != SQLITE_DONE) return false;
     }
@@ -559,13 +557,17 @@ bool Library::RecordLaunch(const std::wstring& id) {
     return true;
 }
 
-bool Library::SortByLaunches() {
-    if (items.empty()) return true;
+Library::SortResult Library::SortByLaunches() {
+    if (std::none_of(items.begin(), items.end(), [](const Shortcut& item) { return item.launches > 0; })) {
+        return SortResult::NoLaunches;
+    }
     auto updated = items;
     std::stable_sort(updated.begin(), updated.end(), [](const Shortcut& a, const Shortcut& b) {
         return a.launches > b.launches;
     });
-    return SavePositions(updated, 0, updated.size() - 1);
+    if (std::equal(updated.begin(), updated.end(), items.begin(),
+                   [](const Shortcut& a, const Shortcut& b) { return a.id == b.id; })) return SortResult::Unchanged;
+    return SavePositions(updated, 0, updated.size() - 1) ? SortResult::Sorted : SortResult::Failed;
 }
 
 namespace {
@@ -931,95 +933,4 @@ void RefreshAutoStart() {
         Log(L"Updating the startup entry to the current location");
         SetAutoStart(true);
     }
-}
-
-namespace {
-bool SaveUrlShortcut(const std::wstring& url, const fs::path& icon, const fs::path& destination) {
-    ComPtr<IUniformResourceLocatorW> link;
-    ComPtr<IPersistFile> persist;
-    if (FAILED(CoCreateInstance(CLSID_InternetShortcut, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
-        FAILED(link.As(&persist)) || FAILED(link->SetURL(url.c_str(), 0))) return false;
-    if (!icon.empty()) {
-        ComPtr<IPropertySetStorage> properties;
-        ComPtr<IPropertyStorage> storage;
-        if (SUCCEEDED(link.As(&properties)) &&
-            SUCCEEDED(properties->Open(FMTID_Intshcut, STGM_READWRITE, &storage))) {
-            PROPSPEC specs[2]{};
-            specs[0].ulKind = specs[1].ulKind = PRSPEC_PROPID;
-            specs[0].propid = PID_IS_ICONFILE;
-            specs[1].propid = PID_IS_ICONINDEX;
-            PROPVARIANT values[2]{};
-            if (SUCCEEDED(InitPropVariantFromString(icon.c_str(), &values[0]))) {
-                InitPropVariantFromInt32(0, &values[1]);
-                storage->WriteMultiple(2, specs, values, 0);
-                storage->Commit(STGC_DEFAULT);
-                PropVariantClear(&values[0]);
-            }
-        }
-    }
-    if (FAILED(persist->Save(destination.c_str(), TRUE))) {
-        DeleteCopy(destination);
-        return false;
-    }
-    return true;
-}
-
-bool SaveExeShortcut(const fs::path& executable, const fs::path& workingDirectory, const fs::path& destination) {
-    ComPtr<IShellLinkW> link;
-    ComPtr<IPersistFile> persist;
-    const auto directory = workingDirectory.empty() ? executable.parent_path() : workingDirectory;
-    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
-        FAILED(link.As(&persist)) || FAILED(link->SetPath(executable.c_str())) ||
-        FAILED(link->SetWorkingDirectory(directory.c_str()))) return false;
-    if (FAILED(persist->Save(destination.c_str(), TRUE))) {
-        DeleteCopy(destination);
-        return false;
-    }
-    return true;
-}
-}
-
-size_t Library::Import(const std::vector<ImportedGame>& games, size_t& duplicates, size_t& failures) {
-    duplicates = failures = 0;
-    auto updated = items;
-    std::vector<fs::path> created;
-    for (const auto& game : games) {
-        if (game.source.empty() || Trim(game.name).empty()) { ++failures; continue; }
-        if (std::any_of(updated.begin(), updated.end(), [&](const Shortcut& item) {
-            return CompareStringOrdinal(item.source.c_str(), -1, game.source.c_str(), -1, TRUE) == CSTR_EQUAL;
-        })) {
-            ++duplicates;
-            continue;
-        }
-        const auto id = NewId();
-        if (id.empty()) { ++failures; continue; }
-        const std::wstring file = id + (game.url.empty() ? L".lnk" : L".url");
-        const bool saved = game.url.empty() ? SaveExeShortcut(game.executable, game.workingDirectory, File(file))
-                                            : SaveUrlShortcut(game.url, game.executable, File(file));
-        if (!saved) {
-            Log(L"Couldn't create a shortcut for %s", game.name.c_str());
-            ++failures;
-            continue;
-        }
-        created.push_back(File(file));
-        Shortcut entry{id, Trim(game.name), game.source, file, {}, {}, {}};
-        if (!game.cover.empty()) {
-            const auto extension = Fold(game.cover.extension().wstring());
-            const auto coverId = NewId();
-            if (!coverId.empty() && (extension == L".jpg" || extension == L".png") &&
-                CopyFileW(game.cover.c_str(), File(coverId + extension).c_str(), TRUE)) {
-                entry.cover = coverId + extension;
-                created.push_back(File(entry.cover));
-            }
-        }
-        updated.push_back(std::move(entry));
-    }
-    const size_t added = updated.size() - items.size();
-    if (!added) return 0;
-    if (!Save(updated, prefs)) {
-        for (const auto& file : created) DeleteCopy(file);
-        failures += added;
-        return 0;
-    }
-    return added;
 }

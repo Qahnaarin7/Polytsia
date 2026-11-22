@@ -33,7 +33,7 @@ enum Control {
     ScrollUp, ScrollDown, HotkeyControl, OpenDataControl,
     FirstBehaviorOption = 60,
     LaunchMenu = 70, AdminMenu, LocationMenu, EditMenu, ReplaceMenu, EarlierMenu, LaterMenu, DeleteMenuItem,
-    SearchMenu, AddMenu, ImportMenu, SortMenu, SettingsMenu,
+    SearchMenu, AddMenu, SortMenu, SettingsMenu,
     CaptionMinimize = 85, CaptionMaximize, CaptionClose,
     FirstLightPalette = 90,
     FirstDarkPalette = FirstLightPalette + PaletteCount,
@@ -64,7 +64,7 @@ inline constexpr MenuItem TileMenuItems[] = {
     {DeleteMenuItem, Texts::RemoveShortcut, true}
 };
 inline constexpr MenuItem BackgroundMenuItems[] = {
-    {SearchMenu, Texts::Search}, {AddMenu, Texts::AddShortcuts}, {ImportMenu, Texts::ImportGames},
+    {SearchMenu, Texts::Search}, {AddMenu, Texts::AddShortcuts},
     {SortMenu, Texts::SortByUse}, {SettingsMenu, Texts::Settings, true}
 };
 
@@ -264,7 +264,6 @@ public:
     void CloseDialog();
     void Error(const std::wstring& text);
     void Launch(const std::wstring& id, bool elevated = false);
-    void ImportGames();
     void SortByUse();
     void RevealTarget(const std::wstring& id);
     bool UpdateHotkey();
@@ -293,6 +292,8 @@ public:
 inline constexpr UiText AfterLaunchLabels[] = {Texts::Exit, Texts::ToTray, Texts::KeepOpen};
 inline constexpr UiText MinimizeLabels[] = {Texts::ToTray, Texts::ToTaskbar};
 inline constexpr UiText CloseLabels[] = {Texts::Exit, Texts::ToTray};
+inline constexpr UiText HotkeyLabels[] = {Texts::HotkeyOff, Texts::HotkeyCtrlAltP, Texts::HotkeyCtrlAltG, Texts::HotkeyCtrlAltF12};
+static_assert(std::size(HotkeyLabels) == HotkeyOptionCount);
 
 struct BehaviorControl {
     int id;
@@ -305,9 +306,13 @@ struct BehaviorControl {
 inline constexpr BehaviorControl BehaviorControls[] = {
     {AfterLaunchControl, SettingsLayout::AfterLaunch, Texts::AfterLaunch, AfterLaunchLabels},
     {MinimizeControl, SettingsLayout::Minimize, Texts::WhenMinimized, MinimizeLabels},
-    {CloseControl, SettingsLayout::Close, Texts::WhenClosed, CloseLabels}
+    {CloseControl, SettingsLayout::Close, Texts::WhenClosed, CloseLabels},
+    {HotkeyControl, SettingsLayout::Hotkey, Texts::GlobalHotkey, HotkeyLabels}
 };
 
 inline const BehaviorControl* BehaviorFor(int id) {
-    return id >= AfterLaunchControl && id <= CloseControl ? &BehaviorControls[id - AfterLaunchControl] : nullptr;
+    for (const auto& control : BehaviorControls) {
+        if (control.id == id) return &control;
+    }
+    return nullptr;
 }

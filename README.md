@@ -12,9 +12,8 @@ Polytsia uses the Windows display language at startup. The interface is availabl
 2. Right-click an empty area and choose **Add shortcuts…**, or drag in `.lnk`, `.url`, or `.exe` files from File Explorer. Polytsia keeps its own copies of shortcuts and creates new shortcuts for executable files. Keep the original program in its folder so its shortcut can launch it.
 3. Click a tile or press **Enter** to open it. Use **Search** in the right-click menu or press **Ctrl+F** to open the search field. Close it with **Esc**. The same menu gives you access to **Settings**. Use **Tab** and the arrow keys to move focus. Drag tiles or use their context menus to reorder them.
 4. Press **F2** on a selected tile or choose **Name and artwork…** in its context menu. You can rename the tile, choose a PNG or ICO file, extract an icon from an EXE, preview the result, or restore the default icon. **Change launch target…** points the tile to another LNK, URL, or EXE file.
-5. Choose **Import games…** in the right-click menu to add installed Steam, Epic Games, and GOG games in one step. Steam games get their library artwork as covers. Games that are already in the library are skipped.
-6. A tile's context menu also has **Run as administrator** and **Open file location** for `.lnk` shortcuts. **Sort by most used** in the background menu orders tiles by how often you open them.
-7. Choose **Add cover…** to use a PNG or JPG. Drag the image within the frame and zoom with the mouse wheel or the **−** and **+** buttons. Select **Apply**, then **Save** in the shortcut editor. To switch back to the tile’s icon, select **Remove** next to the cover and save. Covers appear in the **Full tile** style.
+5. A tile's context menu also has **Run as administrator** and **Open file location** for `.lnk` shortcuts. **Sort by most used** in the background menu orders tiles by how often you open them. Launches are counted starting with version 1.3.0.
+6. Choose **Add cover…** to use a PNG or JPG. Drag the image within the frame and zoom with the mouse wheel or the **−** and **+** buttons. Select **Apply**, then **Save** in the shortcut editor. To switch back to the tile’s icon, select **Remove** next to the cover and save. Covers appear in the **Full tile** style.
 
 ## Settings
 
@@ -48,7 +47,7 @@ The logo in the top corner uses the active palette’s accent color. Drag the sp
 
 If you enable startup, Polytsia opens in the tray when you sign in to your Windows account. If you move or rename `Polytsia.exe`, the startup entry is updated the next time you run it.
 
-Turn on **Show the window with Ctrl+Alt+Space** to bring Polytsia up from anywhere. Press the shortcut again to hide it. If another app already uses the shortcut, Polytsia tells you and leaves the option off.
+Choose a **Show window shortcut** (Ctrl+Alt+P, Ctrl+Alt+G, or Ctrl+Alt+F12) to bring Polytsia up from anywhere. Press it again to hide the window. If another app already uses the combination, Polytsia tells you and turns the shortcut off.
 
 ### Backup
 

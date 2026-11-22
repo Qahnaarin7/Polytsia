@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <filesystem>
+#include <iterator>
 #include <string>
 #include <vector>
 #include <winsqlite/winsqlite3.h>
@@ -23,15 +24,6 @@ struct Shortcut {
     int launches = 0;
 };
 
-// A game found in a store library (Steam, Epic, GOG) that can be added as a tile.
-struct ImportedGame {
-    std::wstring name;
-    std::wstring source;   // Stable identity used for duplicate detection (URL or EXE path).
-    std::wstring url;      // Set for store launch URLs; empty for plain executables.
-    fs::path executable;   // Icon source for URL games, launch target otherwise.
-    fs::path workingDirectory;
-    fs::path cover;        // Optional local cover image (JPG/PNG).
-};
 
 enum class AfterLaunch { Exit, Tray, Keep };
 enum class OnMinimize { Tray, Taskbar };
@@ -59,7 +51,7 @@ struct Preferences {
     TileSpacing tileSpacing = TileSpacing::Normal;
     bool tileHalo = true;
     bool pauseMotionOnBattery = false;
-    bool globalHotkey = false;
+    int globalHotkey = 0; // Index into ShowWindowHotkeys; 0 = off.
 };
 
 struct WindowSize {
@@ -96,8 +88,8 @@ public:
     bool Remove(const std::wstring& id);
     bool Move(const std::wstring& id, const std::wstring& target);
     bool RecordLaunch(const std::wstring& id);
-    bool SortByLaunches();
-    size_t Import(const std::vector<ImportedGame>& games, size_t& duplicates, size_t& failures);
+    enum class SortResult { Sorted, Unchanged, NoLaunches, Failed };
+    SortResult SortByLaunches();
     size_t Find(const std::wstring& id) const;
 };
 
@@ -115,4 +107,11 @@ bool RevealInExplorer(const fs::path& path);
 bool AutoStartRegistered();
 bool SetAutoStart(bool enabled);
 void RefreshAutoStart();
-std::vector<ImportedGame> FindInstalledGames();
+
+struct HotkeyOption {
+    UINT modifiers, key;
+};
+inline constexpr HotkeyOption ShowWindowHotkeys[] = {
+    {0, 0}, {MOD_CONTROL | MOD_ALT, 'P'}, {MOD_CONTROL | MOD_ALT, 'G'}, {MOD_CONTROL | MOD_ALT, VK_F12}
+};
+inline constexpr int HotkeyOptionCount = static_cast<int>(std::size(ShowWindowHotkeys));

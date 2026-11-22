@@ -8,9 +8,13 @@ bool App::UpdateHotkey() {
         UnregisterHotKey(window, ShowWindowHotkey);
         hotkeyRegistered = false;
     }
-    if (!library.prefs.globalHotkey) return true;
-    hotkeyRegistered = RegisterHotKey(window, ShowWindowHotkey, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE) != FALSE;
-    if (!hotkeyRegistered) Log(L"RegisterHotKey(Ctrl+Alt+Space) failed with error %lu", GetLastError());
+    const int option = library.prefs.globalHotkey;
+    if (option <= 0 || option >= HotkeyOptionCount) return true;
+    const auto& hotkey = ShowWindowHotkeys[option];
+    hotkeyRegistered = RegisterHotKey(window, ShowWindowHotkey, hotkey.modifiers | MOD_NOREPEAT, hotkey.key) != FALSE;
+    if (!hotkeyRegistered) {
+        Log(L"RegisterHotKey(%s) failed with error %lu", HotkeyLabels[option].Get(), GetLastError());
+    }
     return hotkeyRegistered;
 }
 

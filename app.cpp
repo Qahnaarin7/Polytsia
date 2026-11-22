@@ -771,7 +771,6 @@ void App::RevealSetting(int id) {
             top = SettingsPosition(SettingsLayout::MotionOnBattery); controlHeight = SettingsLayout::RowHeight; break;
         case AmbientControl: top = SettingsPosition(AmbientPosition()); controlHeight = SettingsLayout::RowHeight; break;
         case AutoStartControl: top = SettingsPosition(AutoStart); controlHeight = SettingsLayout::RowHeight; break;
-        case HotkeyControl: top = SettingsPosition(SettingsLayout::Hotkey); controlHeight = SettingsLayout::RowHeight; break;
         case OpenDataControl: top = SettingsPosition(DataFolder); break;
         case BackupControl: case RestoreControl: top = SettingsPosition(Backup); break;
         default: return;
@@ -980,6 +979,7 @@ int App::BehaviorSelection(int id) const {
     case AfterLaunchControl: return static_cast<int>(library.prefs.afterLaunch);
     case MinimizeControl: return static_cast<int>(library.prefs.onMinimize);
     case CloseControl: return static_cast<int>(library.prefs.onClose);
+    case HotkeyControl: return library.prefs.globalHotkey;
     default: return 0;
     }
 }
@@ -1093,9 +1093,15 @@ void App::Command(int id) {
         case AfterLaunchControl: preferences.afterLaunch = static_cast<AfterLaunch>(choice); break;
         case MinimizeControl: preferences.onMinimize = static_cast<OnMinimize>(choice); break;
         case CloseControl: preferences.onClose = static_cast<OnClose>(choice); break;
+        case HotkeyControl: preferences.globalHotkey = choice; break;
         }
         ToggleBehavior(menu->id);
         Record(preferences);
+        if (menu->id == HotkeyControl && !UpdateHotkey()) {
+            preferences.globalHotkey = 0;
+            Record(preferences);
+            Error(Texts::HotkeyTaken.Get());
+        }
         return;
     }
     switch (id) {
@@ -1140,16 +1146,7 @@ void App::Command(int id) {
             Record(preferences);
         }
         break;
-    case AfterLaunchControl: case MinimizeControl: case CloseControl: ToggleBehavior(id); break;
-    case HotkeyControl:
-        preferences.globalHotkey = !preferences.globalHotkey;
-        Record(preferences);
-        if (!UpdateHotkey()) {
-            preferences.globalHotkey = false;
-            Record(preferences);
-            Error(Texts::HotkeyTaken.Get());
-        }
-        break;
+    case AfterLaunchControl: case MinimizeControl: case CloseControl: case HotkeyControl: ToggleBehavior(id); break;
     case OpenDataControl:
         if (LaunchShortcut(library.root, window) != LaunchResult::Opened) Error(Texts::OpenLibraryError.Get());
         break;
