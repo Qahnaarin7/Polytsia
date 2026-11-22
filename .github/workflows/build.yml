@@ -48,7 +48,8 @@ jobs:
           gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $env:GITHUB_REF_NAME $asset --clobber
-            $body = (gh release view $env:GITHUB_REF_NAME --json body --jq .body)
+            # gh prints the body line by line; join with newlines so Markdown survives.
+            $body = (gh release view $env:GITHUB_REF_NAME --json body --jq .body) -join "`n"
             if ($body -notmatch 'SHA-256') { gh release edit $env:GITHUB_REF_NAME --notes "$body`n`n$notes" }
           } else {
             gh release create $env:GITHUB_REF_NAME $asset --title "Polytsia $version" --notes "$notes" --verify-tag
