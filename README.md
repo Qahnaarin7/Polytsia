@@ -1,65 +1,63 @@
-# Полиця
+# Polytsia
 
-**English.** Polytsia (shelf) is a portable launcher for game and app shortcuts on Windows 11 x64 (build 22621 or newer). Add .lnk, .url or .exe files, customize tiles with icons or cover images, pick one of 20 light and dark themes, and back up your whole library to a single .polytsia file. The interface is available in Ukrainian, English and Russian. Built with C++, Win32, Direct2D, DirectWrite, WIC and Windows SQLite; build it with build.ps1 (MSVC Build Tools, Windows SDK 10.0.22621+).
+Polytsia ("shelf") is a portable launcher for game and app shortcuts on Windows 11 x64, build 22621 or later. Customize tiles with icons or covers, choose from 20 light and dark palettes, and back up your library to a single file.
 
-Переносний лаунчер ігрових та інших ярликів для Windows 11 x64, збірка 22621 або новіша.
+[Download the latest release](https://github.com/Qahnaarin7/Polytsia/releases/latest)
 
-[Завантажити останню версію](https://github.com/Qahnaarin7/Polytsia/releases/latest)
+Polytsia uses the Windows display language at startup. The interface is available in Ukrainian, English, and Russian, with English as the fallback.
 
-Мову інтерфейсу програма визначає за мовою Windows під час запуску. Доступні українська, англійська та російська. Для інших мов використовується англійська.
+## Getting started
 
-## Користування
+1. Save **Polytsia.exe** to a folder of your choice and run it. You can pin it to the taskbar for quick access.
+2. Right-click an empty area and choose **Add shortcuts…**, or drag in `.lnk`, `.url`, or `.exe` files from File Explorer. Polytsia keeps its own copies of shortcuts and creates new shortcuts for executable files. Keep the original program in its folder so its shortcut can launch it.
+3. Click a tile or press **Enter** to open it. Use **Search** in the right-click menu or press **Ctrl+F** to open the search field. Close it with **Esc**. The same menu gives you access to **Settings**. Use **Tab** and the arrow keys to move focus. Drag tiles or use their context menus to reorder them.
+4. Press **F2** on a selected tile or choose **Name and artwork…** in its context menu. You can rename the tile, choose a PNG or ICO file, extract an icon from an EXE, preview the result, or restore the default icon. **Change launch target…** points the tile to another LNK, URL, or EXE file.
+5. Choose **Add cover…** to use a PNG or JPG. Drag the image within the frame and zoom with the mouse wheel or the **−** and **+** buttons. Select **Apply**, then **Save** in the shortcut editor. To switch back to the tile’s icon, select **Remove** next to the cover and save. Covers appear in the **Full tile** style.
 
-1. Збережи **Polytsia.exe** в зручній папці й запусти. За потреби закріпи його на панелі завдань.
-2. Клацни правою кнопкою в порожньому місці й обери **Додати ярлики**. Файли .lnk, .url або .exe також можна перетягнути з Провідника. «Полиця» зберігає власні копії готових ярликів і створює нові ярлики для вибраних EXE. Для запуску збережи програму в її папці.
-3. Відкривай плитку одним кліком або клавішею Enter. **Пошук** у меню порожньої області або Ctrl+F відкриває поле, Esc його закриває. У цьому ж меню є **Налаштування**. Tab і стрілки переміщують фокус. Плитки можна перетягувати або змінювати їхній порядок через контекстне меню.
-4. Натисни F2 на вибраній плитці або обери **Назва та зображення** у контекстному меню. У редакторі можна перейменувати плитку, вибрати PNG, ICO або витягнути іконку з EXE, переглянути результат і відновити стандартну іконку. Дія **Змінити файл запуску** прив’язує плитку до іншого LNK, URL або EXE.
-5. Обери **Додати обкладинку**, щоб завантажити PNG або JPG. Позиціюй зображення мишею в рамці й змінюй масштаб колесом або кнопками **−** і **+**. Натисни **Застосувати**, а потім **Зберегти** у редакторі ярлика. Щоб повернути іконку на плитку, обери **Видалити** поруч з обкладинкою та збережи. Обкладинку видно в стилі **На всю плитку**.
+## Settings
 
-## Налаштування
+### Themes
 
-### Теми
+There are ten light and ten dark palettes. **Match Windows** applies the corresponding palette when Windows switches between light and dark mode. Hover over a palette or use **Tab** to focus it and preview it on your first three tiles. Click the palette or press **Enter** to save your choice.
 
-Є по десять світлих і темних палітр. Режим **Як у Windows** застосовує відповідну палітру після перемикання режиму Windows. Наведи курсор або переведи фокус клавішею Tab на палітру, щоб побачити її на трьох перших плитках із бібліотеки. Клік або Enter зберігає вибір.
+**Ambient brightness** controls the background lighting and colored tile glow from 0% to 150%. Desktop Acrylic is available on Windows 11 24H2 and later when transparency effects are enabled.
 
-Повзунок **Яскравість Ambient** регулює фонове світло та кольоровий ореол плитки від 0% до 150%. На Windows 11 24H2 і новіших за ввімкнених ефектів прозорості доступний Desktop Acrylic.
+### Tiles
 
-### Плитки
+Choose the tile style, size, spacing, label behavior, and colored hover glow. **Centered** places the icon above the label. **Compact** places it to the side. In **Full tile** mode, the artwork spans the tile’s width, with transparent logos given some padding and a lightly tinted background.
 
-У розділі **Плитки** можна окремо вибрати стиль, розмір, проміжки, поведінку підписів і кольоровий ореол при наведенні. **По центру** залишає іконку над назвою, **Компактні** показує іконку збоку. У стилі **На всю плитку** зображення займає площу на всю ширину картки, а прозорі логотипи отримують внутрішній відступ і легкий відтінок фону.
+When animations are enabled, the glow expands and pulses as you hover over a tile. The arrows at the edge of the list show which directions you can scroll. You can also scroll with the mouse wheel.
 
-Ореол плавно розширюється й пульсує, поки плитка під курсором і дозволені анімації. Стрілки біля краю списку показують доступні напрямки прокрутки. Список також можна прокручувати колесом миші.
+### Behavior
 
-### Поведінка
-
-| Дія | Варіанти | За замовчуванням |
+| Setting | Options | Default |
 | --- | --- | --- |
-| Після відкриття ярлика | Вийти, у трей, залишити відкритим | Вийти |
-| Кнопка згортання у вікні | У трей, на панель завдань | У трей |
-| При закритті вікна | Вийти, у трей | Вийти |
-| Автозапуск із Windows у трей | Увімкнути або вимкнути | Вимкнено |
-| Вимикати анімації від акумулятора | Увімкнути або вимкнути на пристрої з вбудованою батареєю | Вимкнено |
+| After opening a shortcut | Exit, To tray, Keep open | Exit |
+| When minimized | To tray, To taskbar | To tray |
+| When closing the window | Exit, To tray | Exit |
+| Start with Windows in the tray | On or off | Off |
+| Pause animations on battery | On or off on devices with a built-in battery | Off |
 
-Якщо ввімкнути **Вимикати анімації від акумулятора**, рух Ambient і переходи призупиняться при роботі від батареї. Після під’єднання живлення діють налаштування анімацій програми та Windows.
+**Pause animations on battery** pauses the ambient motion and transitions while the device is on battery power. When you plug it back in, Polytsia follows its own animation settings and those of Windows.
 
-Клік по іконці в треї або повторний запуск Polytsia.exe повертає вікно. Контекстне меню іконки містить команду **Вийти**. Клік по кнопці на панелі завдань перемикає вікно стандартними засобами Windows. Якщо в треї бракує місця, Windows може помістити іконку в меню прихованих піктограм.
+Click the tray icon or run `Polytsia.exe` again to bring the window back. The tray icon’s context menu includes **Exit**. The taskbar button behaves like other Windows taskbar buttons. If tray space is limited, Windows may move the icon to the hidden icons menu.
 
-Логотип у верхньому куті підхоплює акцент активної палітри. Потягни за вільну область між логотипом і кнопками, щоб перемістити вікно, або двічі клацни по ній, щоб розгорнути чи повернути попередній розмір.
+The logo in the top corner uses the active palette’s accent color. Drag the space between the logo and the window buttons to move the window. Double-click that area to maximize it or restore its previous size.
 
-Після ввімкнення автозапуску програма відкриватиметься в треї після входу в поточний обліковий запис. Якщо перемістиш Polytsia.exe, вимкни та знову увімкни автозапуск із нового місця.
+If you enable startup, Polytsia opens in the tray when you sign in to your Windows account. If you move `Polytsia.exe`, turn the startup option off and back on from the new location.
 
-### Резервна копія
+### Backup
 
-Файли бібліотеки та налаштування зберігаються в **%LOCALAPPDATA%\Polytsia**. Під час наступного запуску вікно відкривається в останньому розмірі або в розгорнутому стані. Автозапуск реєструється для поточного користувача. Бібліотека, яка з’являється на першому запуску, порожня.
+Polytsia stores the library and settings in `%LOCALAPPDATA%\Polytsia`. It remembers the window size and whether the window was maximized. Startup is configured for the current Windows user. The library is empty on first launch.
 
-У вкладці **Резервна копія** можна зберегти або відновити файл `.polytsia` з порядком плиток, ярликами, доступними іконками, обкладинками та налаштуваннями. Відновлення замінює поточну бібліотеку після підтвердження. На іншому ПК ярлики відкриються, якщо їхні цілі доступні. За потреби онови шлях через **Змінити файл запуску**.
+Use the **Backup** tab to save or restore a `.polytsia` file containing the tile order, shortcuts, available icons, covers, and settings. Restoring a backup replaces the current library after confirmation. Shortcuts will open on another PC if their targets are available there. Use **Change launch target…** to update a path if needed.
 
-## Збірка з вихідного коду
+## Building from source
 
-Потрібні MSVC Build Tools із компонентами C++ x64 та Windows SDK 10.0.22621.0 або новішим. Команда збірки з папки вихідного коду
+You’ll need MSVC Build Tools with the x64 C++ components and the Windows SDK 10.0.22621.0 or later. Run the following from the source directory.
 
 ~~~powershell
 .\build.ps1
 ~~~
 
-Результат — **build\Polytsia.exe**. Програма використовує системні бібліотеки Win32, Direct2D, DirectWrite, Windows Imaging Component і Windows SQLite.
+The executable is written to `build\Polytsia.exe`. Polytsia is built with C++ and uses Win32, Direct2D, DirectWrite, Windows Imaging Component, and Windows SQLite.
