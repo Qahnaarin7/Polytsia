@@ -226,6 +226,24 @@ void App::Glyph(int kind, float x, float y, D2D1_COLOR_F color) {
         canvas.Line(x, y + sign * 6.f, x, y - sign * 6.f, color);
         canvas.Line(x, y - sign * 6.f, x - 4.f, y - sign * 2.f, color);
         canvas.Line(x, y - sign * 6.f, x + 4.f, y - sign * 2.f, color);
+    } else if (kind == AdminMenu) {
+        // Shield outline.
+        canvas.Line(x, y - 7, x + 6, y - 4.5f, color, 1.3f);
+        canvas.Line(x + 6, y - 4.5f, x + 5, y + 2, color, 1.3f);
+        canvas.Line(x + 5, y + 2, x, y + 7, color, 1.3f);
+        canvas.Line(x, y + 7, x - 5, y + 2, color, 1.3f);
+        canvas.Line(x - 5, y + 2, x - 6, y - 4.5f, color, 1.3f);
+        canvas.Line(x - 6, y - 4.5f, x, y - 7, color, 1.3f);
+    } else if (kind == LocationMenu) {
+        // Folder.
+        canvas.Line(x - 7, y - 5, x - 2, y - 5, color, 1.3f);
+        canvas.Line(x - 2, y - 5, x, y - 3, color, 1.3f);
+        canvas.Stroke(D2D1::RectF(x - 7, y - 3, x + 7, y + 6), color, 1.5f, 1.3f);
+    } else if (kind == SortMenu) {
+        // Bars of decreasing length.
+        canvas.Line(x - 7, y - 5, x + 7, y - 5, color);
+        canvas.Line(x - 7, y, x + 3, y, color);
+        canvas.Line(x - 7, y + 5, x - 1, y + 5, color);
     } else if (kind == DeleteMenuItem) {
         canvas.Line(x - 7, y - 4, x + 7, y - 4, color);
         canvas.Line(x - 2, y - 7, x + 2, y - 7, color);
@@ -776,8 +794,9 @@ void App::DrawSettings() {
                 }
             }
         }
+        section(SettingsLayout::StartupSection, Texts::Startup.Get());
         toggle(AutoStartControl, AutoStart, Texts::StartInTray.Get(), autoStart);
-        section(248, Texts::MotionAndPower.Get());
+        section(SettingsLayout::MotionSection, Texts::MotionAndPower.Get());
         toggle(Control::Motion, SettingsLayout::Motion, Texts::Animations.Get(), library.prefs.motion);
         const auto hint = !portableBattery ? Texts::BatteryHint.Get()
             : onBattery && library.prefs.motion && library.prefs.pauseMotionOnBattery ? Texts::MotionPaused.Get() : nullptr;
@@ -789,6 +808,11 @@ void App::DrawSettings() {
         DrawButton(RestoreControl, D2D1::RectF(x + 179, backupY, x + 350, backupY + ChipHeight), Texts::RestoreBackup.Get());
         canvas.Text(Texts::BackupContents.Get(),
                     D2D1::RectF(x, row(0), right, row(24)), theme.text);
+        section(DataSection, Texts::Data.Get());
+        canvas.Text(Texts::DataFolderHint.Get(),
+                    D2D1::RectF(x, row(DataSection + 24.f), right, row(DataSection + 48.f)), theme.muted);
+        const float dataY = row(DataFolder);
+        DrawButton(OpenDataControl, D2D1::RectF(x, dataY, x + 220, dataY + ChipHeight), Texts::OpenDataFolder.Get());
     }
     canvas.target->PopAxisAlignedClip();
     for (size_t i = firstControl; i < hits.size(); ++i) hits[i].box = VisiblePart(hits[i].box, clip);

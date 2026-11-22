@@ -1,11 +1,12 @@
 #include <winver.h>
+#include "version.h"
 
 1 ICON "app.ico"
 1 24 "app.manifest"
 
 1 VERSIONINFO
- FILEVERSION 1,2,13,0
- PRODUCTVERSION 1,2,13,0
+ FILEVERSION POLYTSIA_VERSION_MAJOR,POLYTSIA_VERSION_MINOR,POLYTSIA_VERSION_PATCH,0
+ PRODUCTVERSION POLYTSIA_VERSION_MAJOR,POLYTSIA_VERSION_MINOR,POLYTSIA_VERSION_PATCH,0
  FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
  FILEOS VOS__WINDOWS32
  FILETYPE VFT_APP
@@ -14,10 +15,11 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "FileDescription", "Polytsia Shortcut Launcher\0"
-            VALUE "FileVersion", "1.2.13.0\0"
-            VALUE "ProductName", "Polytsia\0"
-            VALUE "ProductVersion", "1.2.13.0\0"
+            VALUE "FileDescription", "Polytsia Shortcut Launcher"
+            VALUE "FileVersion", POLYTSIA_VERSION_STRING
+            VALUE "ProductName", "Polytsia"
+            VALUE "ProductVersion", POLYTSIA_VERSION_STRING
+            VALUE "LegalCopyright", "MIT License"
         END
     END
     BLOCK "VarFileInfo"

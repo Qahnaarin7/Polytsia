@@ -41,7 +41,8 @@ inline constexpr float TabsTop = 69.f, BodyTop = 119.f, Gap = 8.f, Pitch = ChipH
 inline constexpr float ThemeMode = 4.f, PaletteMode = 51.f, Palettes = 101.f;
 inline constexpr float PreviewMargin = 16.f;
 inline constexpr float Tiles = 26.f, Labels = 76.f, TileSize = 126.f, TileSpacing = 176.f, TileHalo = 230.f;
-inline constexpr float AfterLaunch = 30.f, Minimize = 81.f, Close = 132.f, AutoStart = 200.f;
-inline constexpr float Motion = 275.f, MotionOnBattery = 326.f;
-inline constexpr float Backup = 34.f;
+inline constexpr float AfterLaunch = 30.f, Minimize = 81.f, Close = 132.f;
+inline constexpr float StartupSection = 183.f, AutoStart = 210.f, Hotkey = 261.f;
+inline constexpr float MotionSection = 312.f, Motion = 339.f, MotionOnBattery = 390.f;
+inline constexpr float Backup = 34.f, DataSection = 96.f, DataFolder = 148.f;
 }

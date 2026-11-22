@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- assemblyIdentity version is fixed on purpose; the app version lives in version.h. -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.2.13.0" processorArchitecture="amd64" name="Polytsia.Launcher" type="win32"/>
+  <assemblyIdentity version="1.0.0.0" processorArchitecture="amd64" name="Polytsia.Launcher" type="win32"/>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>

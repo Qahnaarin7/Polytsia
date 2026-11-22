@@ -62,12 +62,12 @@ try {
     $env:INCLUDE = "$($compiler.FullName)\include;$sdkInclude\ucrt;$sdkInclude\shared;$sdkInclude\um;$sdkInclude\winrt"
     $env:LIB = "$($compiler.FullName)\lib\x64;$sdkLib\ucrt\x64;$sdkLib\um\x64"
     $resource = Join-Path $output 'app.res'
-    & (Join-Path $sdkBin 'rc.exe') /nologo "/fo$resource" app.rc
+    & (Join-Path $sdkBin 'rc.exe') /nologo /I. "/fo$resource" app.rc
     if ($LASTEXITCODE) { throw "Resource compiler exited with code $LASTEXITCODE." }
     $arguments = @(
         '/nologo', '/std:c++20', '/EHsc', '/utf-8', '/O2', '/MT', '/W4', '/GS', '/Gy',
         '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_WIN32_WINNT=0x0A00', "/Fo$output\\",
-        'app.cpp', 'view.cpp', 'graphics.cpp', 'library.cpp', 'cover_editor.cpp', $resource,
+        'app.cpp', 'view.cpp', 'graphics.cpp', 'library.cpp', 'cover_editor.cpp', 'log.cpp', 'actions.cpp', 'window.cpp', $resource,
         '/link', '/MANIFEST:NO', '/SUBSYSTEM:WINDOWS', '/OPT:REF', '/OPT:ICF', "/OUT:$output\Polytsia.exe",
         'user32.lib', 'gdi32.lib', 'dwmapi.lib', 'd2d1.lib', 'dwrite.lib', 'winsqlite3.lib', 'shell32.lib', 'ole32.lib',
         'uuid.lib', 'comctl32.lib', 'advapi32.lib', 'windowscodecs.lib', 'uxtheme.lib', 'powrprof.lib'

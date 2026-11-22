@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "log.hpp"
 #include <dwmapi.h>
 #include <commctrl.h>
 #include <shellapi.h>
@@ -13,10 +14,6 @@ namespace {
 constexpr int MinimumWindowWidth = 485, MinimumWindowHeight = 475;
 constexpr wchar_t WindowClass[] = L"Polytsia.Launcher";
 
-constexpr UINT_PTR AnimationTimer = 1;
-constexpr UINT_PTR StartupTrayTimer = 2;
-constexpr UINT_PTR AmbientTimer = 3;
-constexpr UINT_PTR DragTimer = 4;
 constexpr int EditSearchId = 201;
 constexpr int EditNameId = 202;
 
@@ -119,6 +116,18 @@ bool Inside(D2D1_RECT_F box, float x, float y) {
     return x >= box.left && x < box.right && y >= box.top && y < box.bottom;
 }
 
+// 64-bit FNV-1a over the UTF-16 bytes. Deterministic across compilers and identical to what
+// MSVC's std::hash<std::wstring> produced in earlier releases, so the instance mutex name is unchanged.
+unsigned long long PathHash(const std::wstring& text) {
+    unsigned long long hash = 14695981039346656037ull;
+    const auto* bytes = reinterpret_cast<const unsigned char*>(text.data());
+    for (size_t i = 0; i < text.size() * sizeof(wchar_t); ++i) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
 int ResizeInset(int axisMetric, UINT dpi) {
     return GetSystemMetricsForDpi(axisMetric, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
 }
@@ -159,6 +168,7 @@ App::~App() {
 bool App::Create(HWND hwnd) {
     dpi = static_cast<float>(GetDpiForWindow(hwnd));
     taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+    RefreshAutoStart();
     autoStart = AutoStartRegistered();
     search = CreateWindowExW(WS_EX_LAYERED, L"EDIT", nullptr, WS_CHILD | ES_AUTOHSCROLL,
                             0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(EditSearchId)), instance, nullptr);
@@ -180,6 +190,7 @@ bool App::Create(HWND hwnd) {
     browseDark = dark;
     DragAcceptFiles(hwnd, TRUE);
     Filter();
+    UpdateHotkey();
     return true;
 }
 
@@ -641,11 +652,11 @@ void App::Tab(bool backwards) {
                 SizeSmall, SizeMedium, SizeLarge, SpacingTight, SpacingNormal, SpacingWide, TileHalo});
             break;
         case SettingsSection::Behavior:
-            order.insert(order.end(), {AfterLaunchControl, MinimizeControl, CloseControl, AutoStartControl, Motion});
+            order.insert(order.end(), {AfterLaunchControl, MinimizeControl, CloseControl, AutoStartControl, HotkeyControl, Motion});
             if (portableBattery) order.push_back(MotionOnBattery);
             break;
         case SettingsSection::Backup:
-            order.insert(order.end(), {BackupControl, RestoreControl});
+            order.insert(order.end(), {BackupControl, RestoreControl, OpenDataControl});
             break;
         }
     }
@@ -702,7 +713,7 @@ float App::SettingsBottom() const {
     case SettingsSection::Themes: return SettingsPosition(AmbientPosition() + SettingsLayout::RowHeight + 12.f);
     case SettingsSection::Tiles: return SettingsPosition(SettingsLayout::TileHalo + SettingsLayout::RowHeight + 12.f);
     case SettingsSection::Behavior: return SettingsPosition(SettingsLayout::MotionOnBattery + SettingsLayout::RowHeight + 30.f);
-    case SettingsSection::Backup: return SettingsPosition(Backup + ChipHeight + 12.f);
+    case SettingsSection::Backup: return SettingsPosition(DataFolder + ChipHeight + 12.f);
     }
     return SettingsClipTop();
 }
@@ -760,6 +771,7 @@ void App::RevealSetting(int id) {
             top = SettingsPosition(SettingsLayout::MotionOnBattery); controlHeight = SettingsLayout::RowHeight; break;
         case AmbientControl: top = SettingsPosition(AmbientPosition()); controlHeight = SettingsLayout::RowHeight; break;
         case AutoStartControl: top = SettingsPosition(AutoStart); controlHeight = SettingsLayout::RowHeight; break;
+        case OpenDataControl: top = SettingsPosition(DataFolder); break;
         case BackupControl: case RestoreControl: top = SettingsPosition(Backup); break;
         default: return;
         }
@@ -951,21 +963,6 @@ void App::Replace(const std::wstring& id) {
     else Filter();
 }
 
-void App::Launch(const std::wstring& id) {
-    const size_t index = library.Find(id);
-    if (index == library.items.size() || launching) return;
-    launching = true;
-    const auto file = library.File(library.items[index].file);
-    auto requestedId = std::make_unique<std::wstring>(id);
-    const HWND owner = window;
-    std::thread([owner, file, requestedId = std::move(requestedId)]() mutable {
-        const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        const bool opened = LaunchShortcut(file, owner);
-        if (SUCCEEDED(com)) CoUninitialize();
-        if (PostMessageW(owner, LaunchReady, opened, reinterpret_cast<LPARAM>(requestedId.get()))) requestedId.release();
-    }).detach();
-}
-
 void App::Record(Preferences preferences) {
     const bool layoutChanged = library.prefs.tileStyle != preferences.tileStyle || library.prefs.labels != preferences.labels ||
         library.prefs.tileSize != preferences.tileSize || library.prefs.tileSpacing != preferences.tileSpacing;
@@ -982,6 +979,7 @@ int App::BehaviorSelection(int id) const {
     case AfterLaunchControl: return static_cast<int>(library.prefs.afterLaunch);
     case MinimizeControl: return static_cast<int>(library.prefs.onMinimize);
     case CloseControl: return static_cast<int>(library.prefs.onClose);
+    case HotkeyControl: return library.prefs.globalHotkey;
     default: return 0;
     }
 }
@@ -1061,16 +1059,18 @@ void App::Command(int id) {
             CloseDialog();
             if (launching) { Error(Texts::WaitForRestore.Get()); return; }
             SetCursor(LoadCursorW(nullptr, IDC_WAIT));
-            const bool restored = library.Restore(path);
+            const auto restored = library.Restore(path);
             SetCursor(LoadCursorW(nullptr, IDC_ARROW));
-            if (restored) {
+            if (restored == OpenResult::Ok) {
                 icons.clear();
                 requested.clear();
                 iconBytes = 0;
                 ApplyTheme();
+                UpdateHotkey();
                 Filter();
                 OpenDialog(Dialog::Info, Texts::RestoreSuccess.Get());
-            } else Error(Texts::RestoreError.Get());
+            } else if (restored == OpenResult::NewerVersion) Error(Texts::NewerBackupError.Get());
+            else Error(Texts::RestoreError.Get());
         } else if (id == ReplaceError) { CloseDialog(); Replace(target); }
         else if (id == ConfirmRemoval) {
             CloseDialog();
@@ -1093,9 +1093,15 @@ void App::Command(int id) {
         case AfterLaunchControl: preferences.afterLaunch = static_cast<AfterLaunch>(choice); break;
         case MinimizeControl: preferences.onMinimize = static_cast<OnMinimize>(choice); break;
         case CloseControl: preferences.onClose = static_cast<OnClose>(choice); break;
+        case HotkeyControl: preferences.globalHotkey = choice; break;
         }
         ToggleBehavior(menu->id);
         Record(preferences);
+        if (menu->id == HotkeyControl && !UpdateHotkey()) {
+            preferences.globalHotkey = 0;
+            Record(preferences);
+            Error(Texts::HotkeyTaken.Get());
+        }
         return;
     }
     switch (id) {
@@ -1140,7 +1146,10 @@ void App::Command(int id) {
             Record(preferences);
         }
         break;
-    case AfterLaunchControl: case MinimizeControl: case CloseControl: ToggleBehavior(id); break;
+    case AfterLaunchControl: case MinimizeControl: case CloseControl: case HotkeyControl: ToggleBehavior(id); break;
+    case OpenDataControl:
+        if (LaunchShortcut(library.root, window) != LaunchResult::Opened) Error(Texts::OpenLibraryError.Get());
+        break;
     case AutoStartControl:
         if (SetAutoStart(!autoStart)) {
             autoStart = AutoStartRegistered();
@@ -1167,213 +1176,6 @@ void App::Command(int id) {
     }
     default: break;
     }
-}
-
-void App::Context(int id, POINT position) {
-    const size_t row = static_cast<size_t>(id - Tile);
-    ScreenToClient(window, &position);
-    contextMenu = ContextMenu{{}, position, effects ? GetTickCount64() : 0, false, false};
-    if (id >= Tile && row < visible.size()) {
-        selected = static_cast<int>(row);
-        const auto originalIndex = visible[row];
-        contextMenu->entry = library.items[originalIndex].id;
-        contextMenu->earlier = originalIndex > 0;
-        contextMenu->later = originalIndex + 1 < library.items.size();
-    }
-    focused = MenuItems().front().id;
-    ChangePress(0);
-    EndDrag();
-    if (GetCapture() == window) ReleaseCapture();
-    ChangeHover(0);
-    SetFocus(window);
-    Layout();
-    if (contextMenu->opened) SetTimer(window, AnimationTimer, 16, nullptr);
-}
-
-std::span<const MenuItem> App::MenuItems() const {
-    return contextMenu->entry.empty() ? std::span<const MenuItem>(BackgroundMenuItems)
-                                      : std::span<const MenuItem>(TileMenuItems);
-}
-
-bool App::MenuEnabled(int action) const {
-    return contextMenu && action >= MenuItems().front().id && action <= MenuItems().back().id &&
-        (action != EarlierMenu || contextMenu->earlier) && (action != LaterMenu || contextMenu->later);
-}
-
-bool App::MenuKey(UINT key) {
-    switch (key) {
-    case VK_ESCAPE: case VK_APPS: case VK_F10: CloseMenu(); return true;
-    case VK_RETURN: case VK_SPACE: RunMenu(hover ? hover : focused); return true;
-    case VK_F2: RunMenu(EditMenu); return true;
-    case VK_UP: case VK_DOWN: case VK_TAB: case VK_HOME: case VK_END: {
-        const int first = MenuItems().front().id, last = MenuItems().back().id;
-        const int count = last - first + 1;
-        const bool reverse = key == VK_UP || (key == VK_TAB && (GetKeyState(VK_SHIFT) & 0x8000));
-        int next = hover ? hover : focused;
-        if (key == VK_HOME) next = first;
-        else if (key == VK_END) next = last;
-        else do {
-            next = first + (next - first + (reverse ? count - 1 : 1)) % count;
-        } while (!MenuEnabled(next));
-        keyboard = true;
-        focused = next;
-        ChangeHover(0);
-        Invalidate();
-        return true;
-    }
-    default: return false;
-    }
-}
-
-void App::CloseMenu() {
-    if (!contextMenu) return;
-    contextMenu.reset();
-    if (MenuCommand(pressed)) {
-        ChangePress(0);
-        if (GetCapture() == window) ReleaseCapture();
-    }
-    focused = selected >= 0 ? Tile + selected : 0;
-    ChangeHover(0);
-    Layout();
-}
-
-void App::RunMenu(int command) {
-    if (!MenuEnabled(command)) return;
-    const auto id = contextMenu->entry;
-    CloseMenu();
-    if (command == SearchMenu) { ShowSearch(true); return; }
-    if (command == AddMenu) { Command(Add); return; }
-    if (command == SettingsMenu) { View(Page::Settings); return; }
-    const auto originalIndex = library.Find(id);
-    if (originalIndex >= library.items.size()) return;
-    switch (command) {
-    case EditMenu: OpenEditor(id); break;
-    case LaunchMenu: Launch(id); break;
-    case ReplaceMenu: Replace(id); break;
-    case EarlierMenu:
-    case LaterMenu: {
-        const auto other = command == EarlierMenu ? originalIndex - 1 : originalIndex + 1;
-        if (other >= library.items.size()) break;
-        if (library.Move(id, library.items[other].id)) Filter();
-        else Error(Texts::SaveOrderError.Get());
-        break;
-    }
-    case DeleteMenuItem: editing = id; OpenDialog(Dialog::Remove, library.items[originalIndex].name); break;
-    default: break;
-    }
-}
-
-bool App::AddTray() {
-    NOTIFYICONDATAW icon{sizeof(icon)};
-    icon.hWnd = window;
-    icon.uID = 1;
-    icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
-    icon.uCallbackMessage = TrayCallback;
-    icon.hIcon = reinterpret_cast<HICON>(GetClassLongPtrW(window, GCLP_HICONSM));
-    wcscpy_s(icon.szTip, Texts::AppName.Get());
-    if (!Shell_NotifyIconW(NIM_ADD, &icon)) return false;
-    icon.uVersion = NOTIFYICON_VERSION_4;
-    Shell_NotifyIconW(NIM_SETVERSION, &icon);
-    return true;
-}
-
-void App::Suspend(bool suspended) {
-    minimized = suspended;
-    PauseIconWorker(suspended);
-    SyncAmbient();
-    if (!suspended) {
-        ScheduleIcons();
-        return;
-    }
-    CloseMenu();
-    KillTimer(window, AnimationTimer);
-    transitions.clear();
-    hoverMotion.clear();
-    pressMotion.clear();
-    dialogSince = 0;
-    tileImageFadeUntil = 0;
-    hover = 0;
-    hotId.clear();
-}
-
-bool App::SendToTray() {
-    if (inTray) return true;
-    if (!AddTray()) return false;
-    CaptureWindowSize();
-    SaveWindowSize();
-    inTray = true;
-    Suspend(true);
-    ShowWindow(window, SW_HIDE);
-    return true;
-}
-
-void App::RemoveTray() {
-    if (!inTray) return;
-    NOTIFYICONDATAW icon{sizeof(icon)};
-    icon.hWnd = window;
-    icon.uID = 1;
-    Shell_NotifyIconW(NIM_DELETE, &icon);
-    inTray = false;
-}
-
-void App::CaptureWindowSize() {
-    if (!windowShown || !IsWindowVisible(window) || IsIconic(window)) return;
-    windowSize.maximized = IsZoomed(window) != FALSE;
-    if (windowSize.maximized) return;
-    RECT rect{};
-    if (!GetWindowRect(window, &rect)) return;
-    const UINT windowDpi = GetDpiForWindow(window);
-    if (!windowDpi) return;
-    const int normalWidth = MulDiv(rect.right - rect.left, 96, windowDpi);
-    const int normalHeight = MulDiv(rect.bottom - rect.top, 96, windowDpi);
-    if (normalWidth > 0 && normalHeight > 0) {
-        windowSize.width = normalWidth;
-        windowSize.height = normalHeight;
-    }
-}
-
-void App::SaveWindowSize() {
-    if (windowShown) library.SetWindowSize(windowSize);
-}
-
-void App::ShowInitialWindow(int command) {
-    const bool maximize = windowSize.maximized;
-    const bool showNormally = command == SW_SHOWNORMAL || command == SW_SHOW || command == SW_SHOWDEFAULT;
-    windowShown = command != SW_HIDE;
-    ShowWindow(window, maximize && showNormally ? SW_SHOWMAXIMIZED : command);
-    if (maximize && showNormally && IsWindowVisible(window) && !IsZoomed(window)) {
-        ShowWindow(window, SW_SHOWMAXIMIZED);
-    }
-    CaptureWindowSize();
-    SyncAmbient();
-}
-
-void App::Restore() {
-    KillTimer(window, StartupTrayTimer);
-    RefreshPowerStatus();
-    UpdateMotion();
-    RemoveTray();
-    if (!windowShown) ShowInitialWindow(SW_SHOWNORMAL);
-    else if (IsIconic(window)) ShowWindow(window, SW_RESTORE);
-    else if (!IsWindowVisible(window)) ShowWindow(window, SW_SHOW);
-    Suspend(false);
-    if (search) Layout();
-    SetForegroundWindow(window);
-}
-
-void App::TrayMenu(POINT position) {
-    HMENU menu = CreatePopupMenu();
-    if (!menu) return;
-    if (position.x == -1 && position.y == -1) GetCursorPos(&position);
-    AppendMenuW(menu, MF_STRING, 1, Texts::OpenApp.Get());
-    AppendMenuW(menu, MF_STRING, 2, Texts::Exit.Get());
-    SetMenuDefaultItem(menu, 1, FALSE);
-    SetForegroundWindow(window);
-    const UINT action = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, position.x, position.y, 0, window, nullptr);
-    DestroyMenu(menu);
-    if (action == 1) Restore();
-    else if (action == 2) DestroyWindow(window);
-    else PostMessageW(window, WM_NULL, 0, 0);
 }
 
 int App::TitleAt(POINT client) const {
@@ -1732,7 +1534,10 @@ LRESULT App::Handle(UINT message, WPARAM w, LPARAM l) {
     case LaunchReady: {
         std::unique_ptr<std::wstring> id(reinterpret_cast<std::wstring*>(l));
         launching = false;
-        if (w) {
+        const auto result = static_cast<LaunchResult>(w);
+        if (result == LaunchResult::Cancelled) return 0;
+        if (result == LaunchResult::Opened) {
+            if (!library.RecordLaunch(*id)) Log(L"Couldn't record a launch");
             if (library.prefs.afterLaunch == AfterLaunch::Exit) DestroyWindow(window);
             else if (library.prefs.afterLaunch == AfterLaunch::Tray && !SendToTray()) ShowWindow(window, SW_MINIMIZE);
         } else {
@@ -1753,12 +1558,16 @@ LRESULT App::Handle(UINT message, WPARAM w, LPARAM l) {
             if (!SendToTray()) ShowWindow(window, SW_MINIMIZE);
         } else DestroyWindow(window);
         return 0;
+    case WM_HOTKEY:
+        if (w == ShowWindowHotkey) ToggleFromHotkey();
+        return 0;
     case WM_ENDSESSION:
         if (w) SaveWindowSize();
         return 0;
     case WM_DESTROY: {
         SaveWindowSize();
         RemoveTray();
+        if (hotkeyRegistered) UnregisterHotKey(window, ShowWindowHotkey);
         StopIconWorker();
         MSG queued{};
         while (PeekMessageW(&queued, window, IconReady, IconReady, PM_REMOVE)) {
@@ -1779,7 +1588,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
     InitCommonControlsEx(&controls);
     const bool startup = Trim(commandLine) == L"--startup";
     const auto root = DataPath();
-    auto mutexName = std::wstring(L"Local\\Polytsia-") + std::to_wstring(std::hash<std::wstring>{}(Fold(root.wstring())));
+    InitLog(root);
+    auto mutexName = std::wstring(L"Local\\Polytsia-") + std::to_wstring(PathHash(Fold(root.wstring())));
     const HANDLE mutex = CreateMutexW(nullptr, FALSE, mutexName.c_str());
     const DWORD mutexError = GetLastError();
     if (!mutex) { CoUninitialize(); return 1; }
@@ -1814,8 +1624,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
     {
         App app;
         app.instance = instance;
-        if (root.empty() || !app.library.Open(root)) {
-            if (!startup) MessageBoxW(nullptr, Texts::OpenLibraryError.Get(), Texts::AppName.Get(), MB_OK | MB_ICONERROR);
+        const auto opened = root.empty() ? OpenResult::Failed : app.library.Open(root);
+        if (opened != OpenResult::Ok) {
+            const auto* text = opened == OpenResult::NewerVersion ? Texts::NewerLibraryError.Get() : Texts::OpenLibraryError.Get();
+            if (!startup) MessageBoxW(nullptr, text, Texts::AppName.Get(), MB_OK | MB_ICONERROR);
         } else {
             const auto icon = LoadIconW(instance, MAKEINTRESOURCEW(1));
             WNDCLASSEXW registration{sizeof(registration)};
