@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.6.0.schema.json
+PackageIdentifier: Qahnaarin7.Polytsia
+PackageVersion: X.Y.Z
+PackageLocale: en-US
+Publisher: Qahnaarin7
+PackageName: Polytsia
+License: MIT
+LicenseUrl: https://github.com/Qahnaarin7/Polytsia/blob/main/LICENSE
+ShortDescription: Portable launcher for game and app shortcuts on Windows 11.
+PackageUrl: https://github.com/Qahnaarin7/Polytsia
+Tags:
+  - launcher
+  - games
+  - shortcuts
+MinimumOSVersion: 10.0.22621.0
+Installers:
+  - Architecture: x64
+    InstallerType: portable
+    InstallerUrl: https://github.com/Qahnaarin7/Polytsia/releases/download/vX.Y.Z/Polytsia-X.Y.Z.exe
+    InstallerSha256: <SHA256>
+    Commands:
+      - polytsia
+ManifestType: singleton
+ManifestVersion: 1.6.0
