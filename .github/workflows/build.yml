@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Check version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path version.h -Pattern 'POLYTSIA_VERSION_STRING "(.+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "Tag $env:GITHUB_REF_NAME does not match version.h ($version)." }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Polytsia
+          path: build/Polytsia.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $asset = "build/Polytsia-$version.exe"
+          Copy-Item build/Polytsia.exe $asset
+          $hash = (Get-FileHash $asset -Algorithm SHA256).Hash
+          $notes = "SHA-256: ``$hash``"
+          gh release create $env:GITHUB_REF_NAME $asset --title "Polytsia $version" --notes "$notes" --verify-tag
