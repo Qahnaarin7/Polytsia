@@ -1,5 +1,8 @@
 #include "graphics.hpp"
 #include "localization.hpp"
+#include "log.hpp"
+#include <intshcut.h>
+#include <propvarutil.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <shellapi.h>
@@ -18,9 +21,14 @@ constexpr wchar_t RunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run
 constexpr wchar_t RunValue[] = L"Polytsia";
 using Statement = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
 
-Statement Query(sqlite3* db, const char* sql) {
+void LogSql(sqlite3* db, const char* sql) {
+    const auto* message = static_cast<const wchar_t*>(sqlite3_errmsg16(db));
+    Log(L"SQLite error %d: %s [%.60S]", sqlite3_extended_errcode(db), message ? message : L"", sql);
+}
+
+Statement Query(sqlite3* db, const char* sql, bool quiet = false) {
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK && !quiet) LogSql(db, sql);
     return {stmt, sqlite3_finalize};
 }
 
@@ -34,7 +42,60 @@ std::wstring Column(sqlite3_stmt* stmt, int column) {
 }
 
 bool Sql(sqlite3* db, const char* sql) {
-    return sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
+    if (sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK) return true;
+    LogSql(db, sql);
+    return false;
+}
+
+int UserVersion(sqlite3* db) {
+    const auto query = Query(db, "PRAGMA user_version");
+    return query && sqlite3_step(query.get()) == SQLITE_ROW ? sqlite3_column_int(query.get(), 0) : -1;
+}
+
+// Creates missing tables and upgrades the schema to SchemaVersion. Used for the live library and,
+// on an in-memory copy, for backups made by older versions.
+OpenResult PrepareSchema(sqlite3* db) {
+    if (!Sql(db,
+        "CREATE TABLE IF NOT EXISTS shortcuts(id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL,"
+        " file TEXT NOT NULL, icon TEXT NOT NULL, position INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS preferences(singleton INTEGER PRIMARY KEY, theme INTEGER NOT NULL,"
+        " close_after INTEGER NOT NULL, motion INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS appearance(singleton INTEGER PRIMARY KEY, light_palette INTEGER NOT NULL,"
+        " dark_palette INTEGER NOT NULL, tile_style INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS visual_effects(singleton INTEGER PRIMARY KEY, ambient INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS tile_labels(singleton INTEGER PRIMARY KEY, mode INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS interface_options(singleton INTEGER PRIMARY KEY, tile_size INTEGER NOT NULL,"
+        " tile_spacing INTEGER NOT NULL, tile_halo INTEGER NOT NULL, pause_on_battery INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS shortcut_covers(id TEXT PRIMARY KEY, file TEXT NOT NULL,"
+        " x REAL NOT NULL, y REAL NOT NULL, zoom REAL NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS window_state(singleton INTEGER PRIMARY KEY, width INTEGER NOT NULL,"
+        " height INTEGER NOT NULL, maximized INTEGER NOT NULL);")) return OpenResult::Failed;
+    const int version = UserVersion(db);
+    if (version < 0) return OpenResult::Failed;
+    if (version > SchemaVersion) {
+        Log(L"Library schema %d is newer than supported %d", version, SchemaVersion);
+        return OpenResult::NewerVersion;
+    }
+    static constexpr const char* Migrations[SchemaVersion] = {
+        // 0 -> 1: window behavior options.
+        "ALTER TABLE preferences ADD COLUMN after_launch INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE preferences ADD COLUMN on_minimize INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE preferences ADD COLUMN on_close INTEGER NOT NULL DEFAULT 0;"
+        "UPDATE preferences SET after_launch=2 WHERE close_after=0;",
+        // 1 -> 2: launch counters and the global hotkey option.
+        "ALTER TABLE shortcuts ADD COLUMN launches INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE interface_options ADD COLUMN global_hotkey INTEGER NOT NULL DEFAULT 0;",
+    };
+    for (int step = version; step < SchemaVersion; ++step) {
+        const std::string sql = std::string("BEGIN;") + Migrations[step] +
+            "PRAGMA user_version=" + std::to_string(step + 1) + "; COMMIT;";
+        if (!Sql(db, sql.c_str())) {
+            sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+            Log(L"Schema migration %d -> %d failed", step, step + 1);
+            return OpenResult::Failed;
+        }
+    }
+    return OpenResult::Ok;
 }
 
 bool WritePreferences(sqlite3* db, const Preferences& preferences) {
@@ -44,7 +105,8 @@ bool WritePreferences(sqlite3* db, const Preferences& preferences) {
     const auto appearance = Query(db, "INSERT OR REPLACE INTO appearance VALUES(1,?,?,?)");
     const auto effects = Query(db, "INSERT OR REPLACE INTO visual_effects VALUES(1,?)");
     const auto labels = Query(db, "INSERT OR REPLACE INTO tile_labels VALUES(1,?)");
-    const auto interfaceOptions = Query(db, "INSERT OR REPLACE INTO interface_options VALUES(1,?,?,?,?)");
+    const auto interfaceOptions = Query(db, "INSERT OR REPLACE INTO interface_options"
+        "(singleton,tile_size,tile_spacing,tile_halo,pause_on_battery,global_hotkey) VALUES(1,?,?,?,?,?)");
     return options && appearance && effects && labels && interfaceOptions &&
         sqlite3_bind_int(options.get(), 1, preferences.theme) == SQLITE_OK &&
         sqlite3_bind_int(options.get(), 2, preferences.afterLaunch == AfterLaunch::Exit) == SQLITE_OK &&
@@ -65,6 +127,7 @@ bool WritePreferences(sqlite3* db, const Preferences& preferences) {
         sqlite3_bind_int(interfaceOptions.get(), 2, static_cast<int>(preferences.tileSpacing)) == SQLITE_OK &&
         sqlite3_bind_int(interfaceOptions.get(), 3, preferences.tileHalo) == SQLITE_OK &&
         sqlite3_bind_int(interfaceOptions.get(), 4, preferences.pauseMotionOnBattery) == SQLITE_OK &&
+        sqlite3_bind_int(interfaceOptions.get(), 5, preferences.globalHotkey) == SQLITE_OK &&
         sqlite3_step(interfaceOptions.get()) == SQLITE_DONE;
 }
 
@@ -180,44 +243,29 @@ Library::~Library() {
     if (db_) sqlite3_close(db_);
 }
 
-bool Library::Open(const fs::path& directory) {
+OpenResult Library::Open(const fs::path& directory) {
     root = directory;
     std::error_code error;
     fs::create_directories(root / L"items", error);
-    if (error || sqlite3_open16((root / L"library.sqlite").c_str(), &db_) != SQLITE_OK) return false;
-    if (!Sql(db_,
-        "CREATE TABLE IF NOT EXISTS shortcuts(id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL,"
-        " file TEXT NOT NULL, icon TEXT NOT NULL, position INTEGER NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS preferences(singleton INTEGER PRIMARY KEY, theme INTEGER NOT NULL,"
-        " close_after INTEGER NOT NULL, motion INTEGER NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS appearance(singleton INTEGER PRIMARY KEY, light_palette INTEGER NOT NULL,"
-        " dark_palette INTEGER NOT NULL, tile_style INTEGER NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS visual_effects(singleton INTEGER PRIMARY KEY, ambient INTEGER NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS tile_labels(singleton INTEGER PRIMARY KEY, mode INTEGER NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS interface_options(singleton INTEGER PRIMARY KEY, tile_size INTEGER NOT NULL,"
-        " tile_spacing INTEGER NOT NULL, tile_halo INTEGER NOT NULL, pause_on_battery INTEGER NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS shortcut_covers(id TEXT PRIMARY KEY, file TEXT NOT NULL,"
-        " x REAL NOT NULL, y REAL NOT NULL, zoom REAL NOT NULL);"
-        "CREATE TABLE IF NOT EXISTS window_state(singleton INTEGER PRIMARY KEY, width INTEGER NOT NULL,"
-        " height INTEGER NOT NULL, maximized INTEGER NOT NULL);")) return false;
-    auto versionQuery = Query(db_, "PRAGMA user_version");
-    if (!versionQuery || sqlite3_step(versionQuery.get()) != SQLITE_ROW) return false;
-    const int version = sqlite3_column_int(versionQuery.get(), 0);
-    versionQuery.reset();
-    if (version == 0 && !Sql(db_, "BEGIN;"
-        "ALTER TABLE preferences ADD COLUMN after_launch INTEGER NOT NULL DEFAULT 0;"
-        "ALTER TABLE preferences ADD COLUMN on_minimize INTEGER NOT NULL DEFAULT 0;"
-        "ALTER TABLE preferences ADD COLUMN on_close INTEGER NOT NULL DEFAULT 0;"
-        "UPDATE preferences SET after_launch=2 WHERE close_after=0;"
-        "PRAGMA user_version=1; COMMIT;")) {
-        Sql(db_, "ROLLBACK");
-        return false;
+    if (error) {
+        Log(L"Couldn't create the data folder: %S", error.message().c_str());
+        return OpenResult::Failed;
     }
-    return version <= 1 && Read();
+    if (sqlite3_open16((root / L"library.sqlite").c_str(), &db_) != SQLITE_OK) {
+        Log(L"Couldn't open library.sqlite");
+        return OpenResult::Failed;
+    }
+    const auto prepared = PrepareSchema(db_);
+    if (prepared != OpenResult::Ok) return prepared;
+    if (!Read()) {
+        Log(L"Couldn't read the library");
+        return OpenResult::Failed;
+    }
+    return OpenResult::Ok;
 }
 
 bool Library::Read() {
-    const auto rows = Query(db_, "SELECT shortcuts.id,name,source,shortcuts.file,icon,shortcut_covers.file,x,y,zoom "
+    const auto rows = Query(db_, "SELECT shortcuts.id,name,source,shortcuts.file,icon,shortcut_covers.file,x,y,zoom,launches "
                                   "FROM shortcuts LEFT JOIN shortcut_covers ON shortcuts.id=shortcut_covers.id ORDER BY position");
     const auto settings = Query(db_, "SELECT theme,motion,after_launch,on_minimize,on_close FROM preferences WHERE singleton=1");
     const auto appearance = Query(db_, "SELECT light_palette,dark_palette,tile_style FROM appearance WHERE singleton=1");
@@ -235,6 +283,7 @@ bool Library::Read() {
                                  static_cast<float>(sqlite3_column_double(rows.get(), 7)),
                                  static_cast<float>(sqlite3_column_double(rows.get(), 8))});
         } else row.cover.clear();
+        row.launches = std::max(0, sqlite3_column_int(rows.get(), 9));
         items.push_back(std::move(row));
     }
     if (result != SQLITE_DONE) return false;
@@ -262,13 +311,15 @@ bool Library::Read() {
     if (result == SQLITE_ROW) prefs.labels = static_cast<TileLabels>(std::clamp(sqlite3_column_int(labels.get(), 0), 0, 2));
     if (result != SQLITE_ROW && result != SQLITE_DONE) return false;
     // Older backup files do not contain the interface_options table.
-    if (auto options = Query(db_, "SELECT tile_size,tile_spacing,tile_halo,pause_on_battery FROM interface_options WHERE singleton=1")) {
+    if (auto options = Query(db_, "SELECT tile_size,tile_spacing,tile_halo,pause_on_battery,global_hotkey"
+                                  " FROM interface_options WHERE singleton=1")) {
         result = sqlite3_step(options.get());
         if (result == SQLITE_ROW) {
             prefs.tileSize = static_cast<TileSize>(std::clamp(sqlite3_column_int(options.get(), 0), 0, 2));
             prefs.tileSpacing = static_cast<TileSpacing>(std::clamp(sqlite3_column_int(options.get(), 1), 0, 2));
             prefs.tileHalo = sqlite3_column_int(options.get(), 2) != 0;
             prefs.pauseMotionOnBattery = sqlite3_column_int(options.get(), 3) != 0;
+            prefs.globalHotkey = sqlite3_column_int(options.get(), 4) != 0;
         }
         if (result != SQLITE_ROW && result != SQLITE_DONE) return false;
     }
@@ -306,7 +357,7 @@ bool Library::SetPreferences(Preferences preferences) {
 
 bool Library::Save(const std::vector<Shortcut>& entries, Preferences preferences) {
     if (!Sql(db_, "BEGIN IMMEDIATE")) return false;
-    const auto item = Query(db_, "INSERT INTO shortcuts VALUES(?,?,?,?,?,?)");
+    const auto item = Query(db_, "INSERT INTO shortcuts(id,name,source,file,icon,position,launches) VALUES(?,?,?,?,?,?,?)");
     const auto cover = Query(db_, "INSERT INTO shortcut_covers VALUES(?,?,?,?,?)");
     bool ok = item && cover && Sql(db_, "DELETE FROM shortcuts; DELETE FROM shortcut_covers;");
     for (size_t i = 0; ok && i < entries.size(); ++i) {
@@ -315,6 +366,7 @@ bool Library::Save(const std::vector<Shortcut>& entries, Preferences preferences
             Bind(item.get(), 3, entry.source) && Bind(item.get(), 4, entry.file) &&
             Bind(item.get(), 5, entry.icon) &&
             sqlite3_bind_int64(item.get(), 6, static_cast<sqlite3_int64>(i)) == SQLITE_OK &&
+            sqlite3_bind_int(item.get(), 7, entry.launches) == SQLITE_OK &&
             sqlite3_step(item.get()) == SQLITE_DONE;
         sqlite3_reset(item.get());
         if (ok && !entry.cover.empty()) {
@@ -328,6 +380,7 @@ bool Library::Save(const std::vector<Shortcut>& entries, Preferences preferences
     }
     ok = ok && WritePreferences(db_, preferences) && Sql(db_, "COMMIT");
     if (!ok) {
+        Log(L"Saving the library failed");
         Sql(db_, "ROLLBACK");
         return false;
     }
@@ -468,6 +521,23 @@ bool Library::Remove(const std::wstring& id) {
     return true;
 }
 
+bool Library::SavePositions(const std::vector<Shortcut>& entries, size_t first, size_t last) {
+    if (!Sql(db_, "BEGIN IMMEDIATE")) return false;
+    const auto update = Query(db_, "UPDATE shortcuts SET position=? WHERE id=?");
+    bool ok = static_cast<bool>(update);
+    for (size_t i = first; ok && i <= last && i < entries.size(); ++i) {
+        ok = sqlite3_bind_int64(update.get(), 1, static_cast<sqlite3_int64>(i)) == SQLITE_OK &&
+            Bind(update.get(), 2, entries[i].id) && sqlite3_step(update.get()) == SQLITE_DONE;
+        sqlite3_reset(update.get());
+    }
+    if (!ok || !Sql(db_, "COMMIT")) {
+        Sql(db_, "ROLLBACK");
+        return false;
+    }
+    items = entries;
+    return true;
+}
+
 bool Library::Move(const std::wstring& id, const std::wstring& target) {
     const size_t origin = Find(id), destination = Find(target);
     if (origin == items.size() || destination == items.size() || origin == destination) return true;
@@ -477,7 +547,25 @@ bool Library::Move(const std::wstring& id, const std::wstring& target) {
     } else {
         std::rotate(updated.begin() + destination, updated.begin() + origin, updated.begin() + origin + 1);
     }
-    return Save(updated, prefs);
+    return SavePositions(updated, std::min(origin, destination), std::max(origin, destination));
+}
+
+bool Library::RecordLaunch(const std::wstring& id) {
+    const size_t index = Find(id);
+    if (index == items.size()) return false;
+    const auto update = Query(db_, "UPDATE shortcuts SET launches=launches+1 WHERE id=?");
+    if (!update || !Bind(update.get(), 1, id) || sqlite3_step(update.get()) != SQLITE_DONE) return false;
+    ++items[index].launches;
+    return true;
+}
+
+bool Library::SortByLaunches() {
+    if (items.empty()) return true;
+    auto updated = items;
+    std::stable_sort(updated.begin(), updated.end(), [](const Shortcut& a, const Shortcut& b) {
+        return a.launches > b.launches;
+    });
+    return SavePositions(updated, 0, updated.size() - 1);
 }
 
 namespace {
@@ -588,20 +676,46 @@ bool Library::Backup(const fs::path& destination) const {
     return ok;
 }
 
-bool Library::Restore(const fs::path& source) {
+OpenResult Library::Restore(const fs::path& source) {
+    // Copy the backup into memory, then validate and migrate the copy. The file itself is never written.
     Library snapshot;
-    const auto filename = source.u8string();
-    if (sqlite3_open_v2(reinterpret_cast<const char*>(filename.c_str()), &snapshot.db_,
-                        SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) return false;
+    {
+        sqlite3* file = nullptr;
+        const auto filename = source.u8string();
+        const bool opened = sqlite3_open_v2(reinterpret_cast<const char*>(filename.c_str()), &file,
+                                            SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK;
+        bool ok = opened && Sql(file, "PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
+        if (ok) {
+            const auto id = Query(file, "PRAGMA application_id");
+            ok = id && sqlite3_step(id.get()) == SQLITE_ROW && sqlite3_column_int(id.get(), 0) == BackupApplicationId;
+        }
+        ok = ok && sqlite3_open16(L":memory:", &snapshot.db_) == SQLITE_OK;
+        if (ok) {
+            auto* copy = sqlite3_backup_init(snapshot.db_, "main", file, "main");
+            ok = copy && sqlite3_backup_step(copy, -1) == SQLITE_DONE;
+            if (copy) ok = sqlite3_backup_finish(copy) == SQLITE_OK && ok;
+        }
+        sqlite3_close(file);
+        if (!ok) {
+            Log(L"Backup file is not a readable Polytsia backup");
+            return OpenResult::Failed;
+        }
+    }
     sqlite3_limit(snapshot.db_, SQLITE_LIMIT_LENGTH, static_cast<int>(AssetLimit + ZoneLimit + 4096));
-    if (!Sql(snapshot.db_, "PRAGMA trusted_schema=OFF; PRAGMA query_only=ON; BEGIN;")) return false;
-    const auto id = Query(snapshot.db_, "PRAGMA application_id");
-    const auto version = Query(snapshot.db_, "PRAGMA user_version");
-    if (!id || sqlite3_step(id.get()) != SQLITE_ROW || sqlite3_column_int(id.get(), 0) != BackupApplicationId ||
-        !version || sqlite3_step(version.get()) != SQLITE_ROW || sqlite3_column_int(version.get(), 0) != 1 ||
-        !snapshot.Read()) return false;
+    if (!Sql(snapshot.db_, "PRAGMA trusted_schema=OFF")) return OpenResult::Failed;
+    {
+        // A backup only ever contains tables. Refuse triggers and views before running migrations on it.
+        const auto extras = Query(snapshot.db_, "SELECT count(*) FROM sqlite_master WHERE type IN ('trigger','view')");
+        if (!extras || sqlite3_step(extras.get()) != SQLITE_ROW || sqlite3_column_int(extras.get(), 0) != 0) {
+            Log(L"Backup contains unexpected schema objects");
+            return OpenResult::Failed;
+        }
+    }
+    const auto prepared = PrepareSchema(snapshot.db_);
+    if (prepared != OpenResult::Ok) return prepared;
+    if (!snapshot.Read() || !Sql(snapshot.db_, "PRAGMA query_only=ON; BEGIN;")) return OpenResult::Failed;
     const auto asset = Query(snapshot.db_, "SELECT data,zone,width,height FROM backup_assets WHERE name=?");
-    if (!asset) return false;
+    if (!asset) return OpenResult::Failed;
 
     std::vector<fs::path> staged;
     auto extract = [&](const std::wstring& name, const fs::path& path, bool optionalIcon = false) {
@@ -635,7 +749,8 @@ bool Library::Restore(const fs::path& source) {
     const auto previous = items;
     if (!ok || !Save(snapshot.items, snapshot.prefs)) {
         for (const auto& file : staged) DeleteCopy(file);
-        return false;
+        Log(L"Restoring the backup failed");
+        return OpenResult::Failed;
     }
     for (const auto& entry : previous) {
         DeleteCopy(File(entry.file));
@@ -643,7 +758,7 @@ bool Library::Restore(const fs::path& source) {
         if (!entry.icon.empty()) DeleteCopy(File(entry.icon));
         if (!entry.cover.empty()) DeleteCopy(File(entry.cover));
     }
-    return true;
+    return OpenResult::Ok;
 }
 
 std::vector<fs::path> ChooseFiles(HWND owner, FileKind kind, bool multi) {
@@ -705,38 +820,206 @@ fs::path ChooseBackupDestination(HWND owner) {
     return result;
 }
 
-bool LaunchShortcut(const fs::path& path, HWND owner) {
+LaunchResult LaunchShortcut(const fs::path& path, HWND owner, bool elevated) {
     SHELLEXECUTEINFOW request{sizeof(request)};
     request.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
     request.hwnd = owner;
-    request.lpVerb = L"open";
+    request.lpVerb = elevated ? L"runas" : L"open";
     request.lpFile = path.c_str();
     request.nShow = SW_SHOWNORMAL;
-    return ShellExecuteExW(&request) != FALSE;
+    if (ShellExecuteExW(&request)) return LaunchResult::Opened;
+    const DWORD error = GetLastError();
+    // Declining the UAC prompt is a user choice, not a failure worth reporting.
+    if (error == ERROR_CANCELLED) return LaunchResult::Cancelled;
+    Log(L"ShellExecuteEx(%s) failed with error %lu", path.filename().c_str(), error);
+    return LaunchResult::Failed;
+}
+
+bool ShortcutElevatable(const fs::path& path) {
+    return Fold(path.extension().wstring()) == L".lnk";
+}
+
+fs::path ShortcutTarget(const fs::path& path) {
+    if (!ShortcutElevatable(path)) return {};
+    ComPtr<IShellLinkW> link;
+    ComPtr<IPersistFile> persist;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+        FAILED(link.As(&persist)) || FAILED(persist->Load(path.c_str(), STGM_READ))) return {};
+    link->Resolve(nullptr, SLR_NO_UI | SLR_NOSEARCH | SLR_NOUPDATE | (400u << 16));
+    std::wstring target(32768, L'\0');
+    if (FAILED(link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, 0))) return {};
+    target.resize(wcslen(target.c_str()));
+    return target;
+}
+
+bool RevealInExplorer(const fs::path& path) {
+    if (path.empty() || GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    PIDLIST_ABSOLUTE item = ILCreateFromPathW(path.c_str());
+    if (!item) return false;
+    const HRESULT result = SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
+    ILFree(item);
+    if (FAILED(result)) Log(L"SHOpenFolderAndSelectItems failed: 0x%08lX", static_cast<unsigned long>(result));
+    return SUCCEEDED(result);
+}
+
+namespace {
+std::wstring ModulePath() {
+    std::wstring path(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        if (!length) return {};
+        if (length < path.size()) {
+            path.resize(length);
+            return path;
+        }
+        if (path.size() >= 32768) return {};
+        path.resize(path.size() * 2);
+    }
+}
+
+std::wstring AutoStartCommand() {
+    const auto module = ModulePath();
+    return module.empty() ? std::wstring{} : L"\"" + module + L"\" --startup";
+}
+
+std::wstring RegisteredAutoStart() {
+    DWORD bytes = 0;
+    if (RegGetValueW(HKEY_CURRENT_USER, RunKey, RunValue, RRF_RT_REG_SZ, nullptr, nullptr, &bytes) != ERROR_SUCCESS ||
+        bytes <= sizeof(wchar_t)) return {};
+    std::wstring value(bytes / sizeof(wchar_t), L'\0');
+    if (RegGetValueW(HKEY_CURRENT_USER, RunKey, RunValue, RRF_RT_REG_SZ, nullptr, value.data(), &bytes) != ERROR_SUCCESS) {
+        return {};
+    }
+    value.resize(wcslen(value.c_str()));
+    return value;
+}
 }
 
 bool AutoStartRegistered() {
-    DWORD bytes = 0;
-    return RegGetValueW(HKEY_CURRENT_USER, RunKey, RunValue, RRF_RT_REG_SZ, nullptr, nullptr, &bytes) == ERROR_SUCCESS &&
-        bytes > sizeof(wchar_t);
+    return !RegisteredAutoStart().empty();
 }
 
 bool SetAutoStart(bool enabled) {
     if (!enabled) {
         const auto result = RegDeleteKeyValueW(HKEY_CURRENT_USER, RunKey, RunValue);
-        return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND;
+        const bool ok = result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND;
+        if (!ok) Log(L"Removing the startup entry failed with error %ld", static_cast<long>(result));
+        return ok;
     }
-    wchar_t module[MAX_PATH]{};
-    const DWORD length = GetModuleFileNameW(nullptr, module, ARRAYSIZE(module));
-    if (!length || length == ARRAYSIZE(module)) return false;
-    const auto command = L"\"" + std::wstring(module, length) + L"\" --startup";
-    if (command.size() >= MAX_PATH) return false;
+    const auto command = AutoStartCommand();
+    if (command.empty()) return false;
     HKEY key = nullptr;
     const auto opened = RegCreateKeyExW(HKEY_CURRENT_USER, RunKey, 0, nullptr, 0, KEY_SET_VALUE,
                                         nullptr, &key, nullptr);
-    if (opened != ERROR_SUCCESS) return false;
+    if (opened != ERROR_SUCCESS) {
+        Log(L"Opening the Run key failed with error %ld", static_cast<long>(opened));
+        return false;
+    }
     const auto result = RegSetValueExW(key, RunValue, 0, REG_SZ, reinterpret_cast<const BYTE*>(command.c_str()),
                                       static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
     RegCloseKey(key);
+    if (result != ERROR_SUCCESS) Log(L"Writing the startup entry failed with error %ld", static_cast<long>(result));
     return result == ERROR_SUCCESS;
+}
+
+void RefreshAutoStart() {
+    // Keep startup working after Polytsia.exe is moved or renamed (for example, after updating to a new release).
+    const auto registered = RegisteredAutoStart();
+    if (registered.empty()) return;
+    const auto expected = AutoStartCommand();
+    if (!expected.empty() && CompareStringOrdinal(registered.c_str(), -1, expected.c_str(), -1, TRUE) != CSTR_EQUAL) {
+        Log(L"Updating the startup entry to the current location");
+        SetAutoStart(true);
+    }
+}
+
+namespace {
+bool SaveUrlShortcut(const std::wstring& url, const fs::path& icon, const fs::path& destination) {
+    ComPtr<IUniformResourceLocatorW> link;
+    ComPtr<IPersistFile> persist;
+    if (FAILED(CoCreateInstance(CLSID_InternetShortcut, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+        FAILED(link.As(&persist)) || FAILED(link->SetURL(url.c_str(), 0))) return false;
+    if (!icon.empty()) {
+        ComPtr<IPropertySetStorage> properties;
+        ComPtr<IPropertyStorage> storage;
+        if (SUCCEEDED(link.As(&properties)) &&
+            SUCCEEDED(properties->Open(FMTID_Intshcut, STGM_READWRITE, &storage))) {
+            PROPSPEC specs[2]{};
+            specs[0].ulKind = specs[1].ulKind = PRSPEC_PROPID;
+            specs[0].propid = PID_IS_ICONFILE;
+            specs[1].propid = PID_IS_ICONINDEX;
+            PROPVARIANT values[2]{};
+            if (SUCCEEDED(InitPropVariantFromString(icon.c_str(), &values[0]))) {
+                InitPropVariantFromInt32(0, &values[1]);
+                storage->WriteMultiple(2, specs, values, 0);
+                storage->Commit(STGC_DEFAULT);
+                PropVariantClear(&values[0]);
+            }
+        }
+    }
+    if (FAILED(persist->Save(destination.c_str(), TRUE))) {
+        DeleteCopy(destination);
+        return false;
+    }
+    return true;
+}
+
+bool SaveExeShortcut(const fs::path& executable, const fs::path& workingDirectory, const fs::path& destination) {
+    ComPtr<IShellLinkW> link;
+    ComPtr<IPersistFile> persist;
+    const auto directory = workingDirectory.empty() ? executable.parent_path() : workingDirectory;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+        FAILED(link.As(&persist)) || FAILED(link->SetPath(executable.c_str())) ||
+        FAILED(link->SetWorkingDirectory(directory.c_str()))) return false;
+    if (FAILED(persist->Save(destination.c_str(), TRUE))) {
+        DeleteCopy(destination);
+        return false;
+    }
+    return true;
+}
+}
+
+size_t Library::Import(const std::vector<ImportedGame>& games, size_t& duplicates, size_t& failures) {
+    duplicates = failures = 0;
+    auto updated = items;
+    std::vector<fs::path> created;
+    for (const auto& game : games) {
+        if (game.source.empty() || Trim(game.name).empty()) { ++failures; continue; }
+        if (std::any_of(updated.begin(), updated.end(), [&](const Shortcut& item) {
+            return CompareStringOrdinal(item.source.c_str(), -1, game.source.c_str(), -1, TRUE) == CSTR_EQUAL;
+        })) {
+            ++duplicates;
+            continue;
+        }
+        const auto id = NewId();
+        if (id.empty()) { ++failures; continue; }
+        const std::wstring file = id + (game.url.empty() ? L".lnk" : L".url");
+        const bool saved = game.url.empty() ? SaveExeShortcut(game.executable, game.workingDirectory, File(file))
+                                            : SaveUrlShortcut(game.url, game.executable, File(file));
+        if (!saved) {
+            Log(L"Couldn't create a shortcut for %s", game.name.c_str());
+            ++failures;
+            continue;
+        }
+        created.push_back(File(file));
+        Shortcut entry{id, Trim(game.name), game.source, file, {}, {}, {}};
+        if (!game.cover.empty()) {
+            const auto extension = Fold(game.cover.extension().wstring());
+            const auto coverId = NewId();
+            if (!coverId.empty() && (extension == L".jpg" || extension == L".png") &&
+                CopyFileW(game.cover.c_str(), File(coverId + extension).c_str(), TRUE)) {
+                entry.cover = coverId + extension;
+                created.push_back(File(entry.cover));
+            }
+        }
+        updated.push_back(std::move(entry));
+    }
+    const size_t added = updated.size() - items.size();
+    if (!added) return 0;
+    if (!Save(updated, prefs)) {
+        for (const auto& file : created) DeleteCopy(file);
+        failures += added;
+        return 0;
+    }
+    return added;
 }

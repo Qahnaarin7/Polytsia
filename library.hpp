@@ -20,6 +20,17 @@ struct CoverChange {
 struct Shortcut {
     std::wstring id, name, source, file, icon, cover;
     Crop crop;
+    int launches = 0;
+};
+
+// A game found in a store library (Steam, Epic, GOG) that can be added as a tile.
+struct ImportedGame {
+    std::wstring name;
+    std::wstring source;   // Stable identity used for duplicate detection (URL or EXE path).
+    std::wstring url;      // Set for store launch URLs; empty for plain executables.
+    fs::path executable;   // Icon source for URL games, launch target otherwise.
+    fs::path workingDirectory;
+    fs::path cover;        // Optional local cover image (JPG/PNG).
 };
 
 enum class AfterLaunch { Exit, Tray, Keep };
@@ -48,6 +59,7 @@ struct Preferences {
     TileSpacing tileSpacing = TileSpacing::Normal;
     bool tileHalo = true;
     bool pauseMotionOnBattery = false;
+    bool globalHotkey = false;
 };
 
 struct WindowSize {
@@ -56,29 +68,36 @@ struct WindowSize {
     bool operator==(const WindowSize&) const = default;
 };
 
+inline constexpr int SchemaVersion = 2;
+enum class OpenResult { Ok, Failed, NewerVersion };
+
 class Library {
     sqlite3* db_ = nullptr;
     bool Read();
+    bool SavePositions(const std::vector<Shortcut>& entries, size_t first, size_t last);
 public:
     fs::path root;
     std::vector<Shortcut> items;
     Preferences prefs;
     WindowSize windowSize;
     ~Library();
-    bool Open(const fs::path& directory);
+    OpenResult Open(const fs::path& directory);
     bool SetPreferences(Preferences preferences);
     bool SetWindowSize(WindowSize size);
     bool Save(const std::vector<Shortcut>& entries, Preferences preferences);
     fs::path File(const std::wstring& file) const { return root / L"items" / file; }
     fs::path StandardIcon(const Shortcut& entry) const { return File(entry.file + L".png"); }
     bool Backup(const fs::path& destination) const;
-    bool Restore(const fs::path& source);
+    OpenResult Restore(const fs::path& source);
     bool Add(const std::vector<fs::path>& paths, std::wstring& report);
     bool Replace(const std::wstring& id, const fs::path& source);
     bool Edit(const std::wstring& id, const std::wstring& name, const fs::path& icon, bool reset,
               const CoverChange* cover = nullptr, const struct Pixels* iconPreview = nullptr);
     bool Remove(const std::wstring& id);
     bool Move(const std::wstring& id, const std::wstring& target);
+    bool RecordLaunch(const std::wstring& id);
+    bool SortByLaunches();
+    size_t Import(const std::vector<ImportedGame>& games, size_t& duplicates, size_t& failures);
     size_t Find(const std::wstring& id) const;
 };
 
@@ -88,6 +107,12 @@ std::wstring Fold(std::wstring value);
 enum class FileKind { Shortcut, Icon, Cover, Backup };
 std::vector<fs::path> ChooseFiles(HWND owner, FileKind kind, bool multi);
 fs::path ChooseBackupDestination(HWND owner);
-bool LaunchShortcut(const fs::path& path, HWND owner);
+enum class LaunchResult { Opened, Failed, Cancelled };
+LaunchResult LaunchShortcut(const fs::path& path, HWND owner, bool elevated = false);
+bool ShortcutElevatable(const fs::path& path);
+fs::path ShortcutTarget(const fs::path& path);
+bool RevealInExplorer(const fs::path& path);
 bool AutoStartRegistered();
 bool SetAutoStart(bool enabled);
+void RefreshAutoStart();
+std::vector<ImportedGame> FindInstalledGames();

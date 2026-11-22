@@ -12,6 +12,12 @@ constexpr UINT LaunchReady = WM_APP + 2;
 constexpr UINT FocusExisting = WM_APP + 3;
 constexpr UINT LoadVisibleIcons = WM_APP + 4;
 constexpr UINT TrayCallback = WM_APP + 5;
+constexpr int ShowWindowHotkey = 1;
+
+inline constexpr UINT_PTR AnimationTimer = 1;
+inline constexpr UINT_PTR StartupTrayTimer = 2;
+inline constexpr UINT_PTR AmbientTimer = 3;
+inline constexpr UINT_PTR DragTimer = 4;
 
 enum class Page { Library, Settings };
 enum class SettingsSection { Themes, Tiles, Behavior, Backup };
@@ -24,16 +30,17 @@ enum Control {
     LabelsAlways, LabelsHover, LabelsHidden, BackupControl, RestoreControl, ConfirmRestore, RemoveCoverEdit,
     SettingsThemes, SettingsTiles, SettingsBehavior, SettingsBackup, BrowseLight, BrowseDark,
     SizeSmall, SizeMedium, SizeLarge, SpacingTight, SpacingNormal, SpacingWide, TileHalo, MotionOnBattery,
-    ScrollUp, ScrollDown,
+    ScrollUp, ScrollDown, HotkeyControl, OpenDataControl,
     FirstBehaviorOption = 60,
-    LaunchMenu = 70, EditMenu, ReplaceMenu, EarlierMenu, LaterMenu, DeleteMenuItem,
-    SearchMenu, AddMenu, SettingsMenu,
+    LaunchMenu = 70, AdminMenu, LocationMenu, EditMenu, ReplaceMenu, EarlierMenu, LaterMenu, DeleteMenuItem,
+    SearchMenu, AddMenu, ImportMenu, SortMenu, SettingsMenu,
     CaptionMinimize = 85, CaptionMaximize, CaptionClose,
     FirstLightPalette = 90,
     FirstDarkPalette = FirstLightPalette + PaletteCount,
     Tile = FirstDarkPalette + PaletteCount
 };
-static_assert(ScrollDown < FirstBehaviorOption);
+static_assert(OpenDataControl < FirstBehaviorOption);
+static_assert(SettingsMenu < CaptionMinimize);
 enum class Dialog { None, Edit, Cover, Error, Missing, Remove, Restore, Info };
 
 struct ContextMenu {
@@ -41,6 +48,7 @@ struct ContextMenu {
     POINT anchor;
     ULONGLONG opened;
     bool earlier, later;
+    bool elevatable = false, located = false;
 };
 
 struct MenuItem {
@@ -50,12 +58,14 @@ struct MenuItem {
 };
 
 inline constexpr MenuItem TileMenuItems[] = {
-    {LaunchMenu, Texts::Open}, {EditMenu, Texts::EditShortcut}, {ReplaceMenu, Texts::ChangeTarget},
+    {LaunchMenu, Texts::Open}, {AdminMenu, Texts::RunAsAdmin}, {LocationMenu, Texts::OpenLocation},
+    {EditMenu, Texts::EditShortcut, true}, {ReplaceMenu, Texts::ChangeTarget},
     {EarlierMenu, Texts::MoveEarlier, true}, {LaterMenu, Texts::MoveLater},
     {DeleteMenuItem, Texts::RemoveShortcut, true}
 };
 inline constexpr MenuItem BackgroundMenuItems[] = {
-    {SearchMenu, Texts::Search}, {AddMenu, Texts::AddShortcuts}, {SettingsMenu, Texts::Settings, true}
+    {SearchMenu, Texts::Search}, {AddMenu, Texts::AddShortcuts}, {ImportMenu, Texts::ImportGames},
+    {SortMenu, Texts::SortByUse}, {SettingsMenu, Texts::Settings, true}
 };
 
 inline constexpr ULONGLONG MenuDuration = 175;
@@ -106,7 +116,7 @@ public:
     bool dark = true, contrast = false, effects = true, minimized = false, glass = false, inTray = false;
     bool keyboard = false, dragging = false, tracking = false, launching = false, iconsPosted = false;
     bool autoStart = false, searchExpanded = false, activeWindow = false, captionMinimize = false, windowShown = false;
-    bool titleTracking = false;
+    bool titleTracking = false, hotkeyRegistered = false;
     int trayRetries = 0, expandedSetting = 0;
     float width = 0, height = 0, dpi = 96, scroll = 0, maxScroll = 0, tileWidth = 0, gridLeft = 24.f;
     static constexpr float TitleHeight = 36.f;
@@ -253,7 +263,12 @@ public:
     void OpenDialog(Dialog next, const std::wstring& text = {});
     void CloseDialog();
     void Error(const std::wstring& text);
-    void Launch(const std::wstring& id);
+    void Launch(const std::wstring& id, bool elevated = false);
+    void ImportGames();
+    void SortByUse();
+    void RevealTarget(const std::wstring& id);
+    bool UpdateHotkey();
+    void ToggleFromHotkey();
     void Replace(const std::wstring& id);
     void Record(Preferences preferences);
     int BehaviorSelection(int id) const;
