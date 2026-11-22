@@ -588,7 +588,8 @@ void App::MotionTick() {
 }
 
 void App::SyncAmbient() {
-    const bool run = effects && AmbientValue() > 0 && activeWindow && !minimized && IsWindowVisible(window);
+    const bool run = effects && AmbientValue() > 0 && library.prefs.ambientStyle != AmbientStyle::Still &&
+        activeWindow && !minimized && IsWindowVisible(window);
     if (run && !ambientSince) {
         ambientSince = GetTickCount64();
         if (!SetTimer(window, AmbientTimer, 33, nullptr)) ambientSince = 0;
@@ -645,6 +646,7 @@ void App::Tab(bool backwards) {
             const int first = browseDark ? FirstDarkPalette : FirstLightPalette;
             for (int i = 0; i < PaletteCount; ++i) order.push_back(first + i);
             order.push_back(AmbientControl);
+            for (int i = 0; i < AmbientStyleCount; ++i) order.push_back(FirstAmbientStyle + i);
             break;
         }
         case SettingsSection::Tiles:
@@ -707,10 +709,15 @@ float App::AmbientPosition() const {
     return SettingsLayout::Palettes + ((PaletteCount - 1) / PaletteColumns() + 1) * SettingsLayout::Pitch + 18.f;
 }
 
+float App::EffectPosition() const {
+    return AmbientPosition() + SettingsLayout::RowHeight + 14.f;
+}
+
 float App::SettingsBottom() const {
     using namespace SettingsLayout;
+    const int effectRows = (AmbientStyleCount - 1) / PaletteColumns() + 1;
     switch (settingsSection) {
-    case SettingsSection::Themes: return SettingsPosition(AmbientPosition() + SettingsLayout::RowHeight + 12.f);
+    case SettingsSection::Themes: return SettingsPosition(EffectPosition() + 26.f + effectRows * Pitch + 4.f);
     case SettingsSection::Tiles: return SettingsPosition(SettingsLayout::TileHalo + SettingsLayout::RowHeight + 12.f);
     case SettingsSection::Behavior: return SettingsPosition(SettingsLayout::MotionOnBattery + SettingsLayout::RowHeight + 30.f);
     case SettingsSection::Backup: return SettingsPosition(DataFolder + ChipHeight + 12.f);
@@ -751,6 +758,8 @@ void App::RevealSetting(int id) {
     if (const auto* menu = BehaviorFor(id)) {
         top = SettingsPosition(menu->top);
         controlHeight = SettingsLayout::RowHeight;
+    } else if (id >= FirstAmbientStyle && id < FirstAmbientStyle + AmbientStyleCount) {
+        top = SettingsPosition(EffectPosition() + 26.f) + (id - FirstAmbientStyle) / PaletteColumns() * SettingsLayout::Pitch;
     } else if (id >= FirstLightPalette && id < Tile) {
         top = PaletteOptionTop(id - (id >= FirstDarkPalette ? FirstDarkPalette : FirstLightPalette));
     } else if (id >= FirstBehaviorOption && id < LaunchMenu) {
@@ -1080,6 +1089,14 @@ void App::Command(int id) {
         return;
     }
     auto preferences = library.prefs;
+    if (id >= FirstAmbientStyle && id < FirstAmbientStyle + AmbientStyleCount) {
+        preferences.ambientStyle = static_cast<AmbientStyle>(id - FirstAmbientStyle);
+        Record(preferences);
+        ambientFocus = {-1.f, -1.f};
+        SyncAmbient();
+        Invalidate();
+        return;
+    }
     if (id >= FirstLightPalette && id < Tile) {
         if (id >= FirstDarkPalette) preferences.darkPalette = id - FirstDarkPalette;
         else preferences.lightPalette = id - FirstLightPalette;

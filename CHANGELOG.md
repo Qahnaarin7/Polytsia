@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+- Ten new palettes in calmer, bolder tones. Light: Steel, Pine, Khaki, Navy, Brick. Dark: Carbon, Forest, Volcano, Neon, Gunmetal.
+- **Ambient effect** selector on the Themes tab: Drift (the previous effect), Aurora, Pulse, Follow cursor, and Still. Still uses no CPU for animation.
+
 ## 1.3.0
 
 ### Added
